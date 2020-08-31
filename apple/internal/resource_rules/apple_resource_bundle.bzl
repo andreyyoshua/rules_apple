@@ -88,6 +88,9 @@ def _apple_resource_bundle_impl(ctx):
             resources.bucketize_with_processing(
                 actions = actions,
                 bundle_id = None,
+                ctx,
+                resource_files,
+                swift_module = ctx.attr.product_module_name,
                 parent_dir_param = bundle_name,
                 platform_prerequisites = platform_prerequisites,
                 product_type = None,
@@ -204,6 +207,10 @@ bundle root in the same structure passed to this argument, so ["res/foo.png"] wi
 res/foo.png inside the bundle.
 """,
         ),
+        "product_module_name": attr.string(
+            mandatory = False,
+            doc = ""
+        )
     }),
     fragments = ["apple"],
     doc = """
