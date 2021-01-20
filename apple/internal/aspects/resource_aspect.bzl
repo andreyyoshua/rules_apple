@@ -151,7 +151,7 @@ def _apple_resource_aspect_impl(target, ctx):
             bucketized_owners, unowned_resources, buckets = resources.bucketize_data(
                 resources = resource_files,
                 owner = owner,
-                swift_module = ctx.rule.attr.product_module_name,
+                swift_module = ctx.rule.product_module_name,
                 parent_dir_param = bundle_name,
                 **bucketize_args
             )
