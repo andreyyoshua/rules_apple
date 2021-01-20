@@ -39,6 +39,14 @@ load(
     "swift_static_framework_aspect",
 )
 load(
+    "@build_bazel_rules_apple//apple/internal/aspects:swift_dynamic_framework_aspect.bzl",
+    "swift_dynamic_framework_aspect",
+)
+load(
+    "@build_bazel_rules_apple//apple/internal:transition_support.bzl",
+    "transition_support",
+)
+load(
     "@build_bazel_rules_apple//apple/internal/testing:apple_test_bundle_support.bzl",
     "apple_test_info_aspect",
 )
@@ -60,6 +68,7 @@ load(
     "AppleBundleVersionInfo",
     "AppleResourceBundleInfo",
     "AppleTestRunnerInfo",
+    "IosAppClipBundleInfo",
     "IosApplicationBundleInfo",
     "IosExtensionBundleInfo",
     "IosFrameworkBundleInfo",
@@ -91,7 +100,65 @@ def _is_test_product_type(product_type):
         apple_product_type.unit_test_bundle,
     )
 
-# Private attributes on every rule that provide access to tools and other file dependencies.
+# Private attributes on all rules.
+_COMMON_ATTRS = dicts.add(
+    {
+        "_grep_includes": attr.label(
+            cfg = "host",
+            allow_single_file = True,
+            executable = True,
+            default = Label("@bazel_tools//tools/cpp:grep-includes"),
+        ),
+    },
+    apple_support.action_required_attrs(),
+)
+
+# Private attributes on rules that perform binary linking.
+_COMMON_BINARY_RULE_ATTRS = dicts.add(
+    {
+        "_cc_toolchain": attr.label(
+            default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
+        ),
+        "_child_configuration_dummy": attr.label(
+            cfg = apple_common.multi_arch_split,
+            default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
+        ),
+        # Needed for the J2ObjC processing code that already exists in the implementation of
+        # apple_common.link_multi_arch_binary.
+        "_dummy_lib": attr.label(
+            cfg = apple_common.multi_arch_split,
+            default = Label("@bazel_tools//tools/objc:dummy_lib"),
+        ),
+        "_googlemac_proto_compiler": attr.label(
+            cfg = "host",
+            default = Label("@bazel_tools//tools/objc:protobuf_compiler_wrapper"),
+        ),
+        "_googlemac_proto_compiler_support": attr.label(
+            cfg = "host",
+            default = Label("@bazel_tools//tools/objc:protobuf_compiler_support"),
+        ),
+        # Needed for the J2ObjC processing code that already exists in the implementation of
+        # apple_common.link_multi_arch_binary.
+        "_j2objc_dead_code_pruner": attr.label(
+            default = Label("@bazel_tools//tools/objc:j2objc_dead_code_pruner"),
+        ),
+        "_protobuf_well_known_types": attr.label(
+            cfg = "host",
+            default = Label("@bazel_tools//tools/objc:protobuf_well_known_types"),
+        ),
+        # xcrunwrapper is no longer used by rules_apple, but the underlying implementation of
+        # apple_common.link_multi_arch_binary requires this attribute.
+        # TODO(b/117932394): Remove this attribute once Bazel no longer uses xcrunwrapper.
+        "_xcrunwrapper": attr.label(
+            cfg = "host",
+            executable = True,
+            default = Label("@bazel_tools//tools/objc:xcrunwrapper"),
+        ),
+    },
+)
+
+# Private attributes on every rule that provide access to bundling tools and other file
+# dependencies.
 _COMMON_PRIVATE_TOOL_ATTRS = dicts.add(
     {
         "_bundletool": attr.label(
@@ -120,12 +187,6 @@ _COMMON_PRIVATE_TOOL_ATTRS = dicts.add(
             default = Label(
                 "@build_bazel_rules_apple//apple/internal/templates:dsym_info_plist_template",
             ),
-        ),
-        "_grep_includes": attr.label(
-            cfg = "host",
-            allow_single_file = True,
-            executable = True,
-            default = Label("@bazel_tools//tools/cpp:grep-includes"),
         ),
         "_plisttool": attr.label(
             cfg = "host",
@@ -169,7 +230,6 @@ _COMMON_PRIVATE_TOOL_ATTRS = dicts.add(
             default = Label("@build_bazel_rules_apple//tools/imported_dynamic_framework_processor"),
         ),
     },
-    apple_support.action_required_attrs(),
 )
 
 _COMMON_TEST_ATTRS = {
@@ -207,17 +267,6 @@ AppleTestRunnerInfo provider.
         cfg = "host",
         default = Label("@build_bazel_apple_support//tools:coverage_support"),
     ),
-    # gcov and mcov are binary files required to calculate test coverage.
-    "_gcov": attr.label(
-        cfg = "host",
-        default = Label("@bazel_tools//tools/objc:gcov"),
-        allow_single_file = True,
-    ),
-    "_mcov": attr.label(
-        cfg = "host",
-        default = Label("@bazel_tools//tools/objc:mcov"),
-        allow_single_file = True,
-    ),
 }
 
 _EXTENSION_PROVIDES_MAIN_ATTRS = {
@@ -239,94 +288,70 @@ true.
     ),
 }
 
-def _common_binary_linking_attrs(rule_descriptor):
+def _common_binary_linking_attrs(default_binary_type, deps_cfg, product_type):
     deps_aspects = [
         apple_common.objc_proto_aspect,
-        apple_resource_aspect,
-        framework_import_aspect,
         swift_usage_aspect,
     ]
-    if _is_test_product_type(rule_descriptor.product_type):
-        deps_aspects.append(apple_test_info_aspect)
+    if product_type:
+        deps_aspects.extend([
+            apple_resource_aspect,
+            framework_import_aspect,
+        ])
+        if _is_test_product_type(product_type):
+            deps_aspects.append(apple_test_info_aspect)
+        if product_type == apple_product_type.static_framework:
+            deps_aspects.append(swift_static_framework_aspect)
+        if product_type == apple_product_type.framework:
+            deps_aspects.append(swift_dynamic_framework_aspect)
 
-    if rule_descriptor.product_type == apple_product_type.static_framework:
-        deps_aspects.append(swift_static_framework_aspect)
-
-    return {
-        "binary_type": attr.string(
-            default = rule_descriptor.binary_type,
-            doc = """
+    return dicts.add(
+        _COMMON_ATTRS,
+        _COMMON_BINARY_RULE_ATTRS,
+        {
+            "binary_type": attr.string(
+                default = default_binary_type,
+                doc = """
+This attribute is public as an implementation detail while we migrate the architecture of the rules.
+Do not change its value.
+    """,
+            ),
+            "bundle_loader": attr.label(
+                aspects = [apple_common.objc_proto_aspect],
+                providers = [[apple_common.AppleExecutableBinary]],
+                doc = """
+This attribute is public as an implementation detail while we migrate the architecture of the rules.
+Do not change its value.
+    """,
+            ),
+            "dylibs": attr.label_list(
+                aspects = [apple_common.objc_proto_aspect],
+                doc = """
 This attribute is public as an implementation detail while we migrate the architecture of the rules.
 Do not change its value.
     """,
         ),
-        "bundle_loader": attr.label(
-            aspects = [apple_common.objc_proto_aspect],
-            providers = [[apple_common.AppleExecutableBinary]],
-            doc = """
-This attribute is public as an implementation detail while we migrate the architecture of the rules.
-Do not change its value.
+            "codesignopts": attr.string_list(
+                doc = """
+A list of strings representing extra flags that should be passed to `codesign`.
     """,
-        ),
-        "dylibs": attr.label_list(
-            aspects = [apple_common.objc_proto_aspect],
-            doc = """
-This attribute is public as an implementation detail while we migrate the architecture of the rules.
-Do not change its value.
-    """,
-        ),
-        "linkopts": attr.string_list(
-            doc = """
+            ),
+            "linkopts": attr.string_list(
+                doc = """
 A list of strings representing extra flags that should be passed to the linker.
     """,
-        ),
-        "deps": attr.label_list(
-            aspects = deps_aspects,
-            cfg = rule_descriptor.deps_cfg,
-            doc = """
+            ),
+            "deps": attr.label_list(
+                aspects = deps_aspects,
+                cfg = deps_cfg,
+                doc = """
 A list of dependencies targets that will be linked into this target's binary. Any resources, such as
 asset catalogs, that are referenced by those targets will also be transitively included in the final
 bundle.
-    """,
-        ),
-        "_cc_toolchain": attr.label(
-            default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
-        ),
-        "_child_configuration_dummy": attr.label(
-            cfg = apple_common.multi_arch_split,
-            default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
-        ),
-        # Needed for the J2ObjC processing code that already exists in the implementation of
-        # apple_common.link_multi_arch_binary.
-        "_dummy_lib": attr.label(
-            default = Label("@bazel_tools//tools/objc:dummy_lib"),
-        ),
-        "_googlemac_proto_compiler": attr.label(
-            cfg = "host",
-            default = Label("@bazel_tools//tools/objc:protobuf_compiler_wrapper"),
-        ),
-        "_googlemac_proto_compiler_support": attr.label(
-            cfg = "host",
-            default = Label("@bazel_tools//tools/objc:protobuf_compiler_support"),
-        ),
-        # Needed for the J2ObjC processing code that already exists in the implementation of
-        # apple_common.link_multi_arch_binary.
-        "_j2objc_dead_code_pruner": attr.label(
-            default = Label("@bazel_tools//tools/objc:j2objc_dead_code_pruner"),
-        ),
-        "_protobuf_well_known_types": attr.label(
-            cfg = "host",
-            default = Label("@bazel_tools//tools/objc:protobuf_well_known_types"),
-        ),
-        # xcrunwrapper is no longer used by rules_apple, but the underlying implementation of
-        # apple_common.link_multi_arch_binary requires this attribute.
-        # TODO(b/117932394): Remove this attribute once Bazel no longer uses xcrunwrapper.
-        "_xcrunwrapper": attr.label(
-            cfg = "host",
-            executable = True,
-            default = Label("@bazel_tools//tools/objc:xcrunwrapper"),
-        ),
-    }
+        """,
+            ),
+        },
+    )
 
 def _get_common_bundling_attributes(rule_descriptor):
     """Returns a list of dictionaries with attributes common to all bundling rules."""
@@ -384,6 +409,14 @@ The desired name of the bundle (without the extension). If this attribute is not
 of the target will be used instead.
 """,
         ),
+        "executable_name": attr.string(
+            mandatory = False,
+            doc = """
+The desired name of the executable, if the bundle has an executable. If this attribute is not set,
+then the name of the `bundle_name` attribute will be used if it is set; if not, then the name of
+the target will be used instead.
+""",
+        ),
         # TODO(b/36512239): Rename to "bundle_post_processor".
         "ipa_post_processor": attr.label(
             allow_files = True,
@@ -416,6 +449,7 @@ in the bundle.
         ),
         "resources": attr.label_list(
             allow_files = True,
+            aspects = [apple_resource_aspect],
             doc = """
 A list of resources or files bundled with the bundle. The resources will be stored in the
 appropriate resources location within the bundle.
@@ -598,6 +632,12 @@ fashion, such as a Cocoapod.
         })
     elif rule_descriptor.product_type == apple_product_type.application:
         attrs.append({
+            "app_clips": attr.label_list(
+                providers = [[AppleBundleInfo, IosAppClipBundleInfo]],
+                doc = """
+A list of iOS app clips to include in the final application bundle.
+""",
+            ),
             "extensions": attr.label_list(
                 providers = [[AppleBundleInfo, IosExtensionBundleInfo]],
                 doc = """
@@ -621,10 +661,25 @@ the application bundle.
 """,
             ),
         })
+    elif rule_descriptor.product_type == apple_product_type.app_clip:
+        attrs.append({
+            "launch_storyboard": attr.label(
+                allow_single_file = [".storyboard", ".xib"],
+                doc = """
+The `.storyboard` or `.xib` file that should be used as the launch screen for the app clip. The
+provided file will be compiled into the appropriate format (`.storyboardc` or `.nib`) and placed in
+the root of the final bundle. The generated file will also be registered in the bundle's
+Info.plist under the key `UILaunchStoryboardName`.
+""",
+            ),
+        })
     elif rule_descriptor.product_type == apple_product_type.app_extension:
         attrs.append(_EXTENSION_PROVIDES_MAIN_ATTRS)
     elif _is_test_product_type(rule_descriptor.product_type):
-        required_providers = [[AppleBundleInfo, IosApplicationBundleInfo]]
+        required_providers = [
+            [AppleBundleInfo, IosApplicationBundleInfo],
+            [AppleBundleInfo, IosExtensionBundleInfo],
+        ]
         test_host_mandatory = False
         if rule_descriptor.product_type == apple_product_type.ui_test_bundle:
             required_providers.append([AppleBundleInfo, IosImessageApplicationBundleInfo])
@@ -642,7 +697,8 @@ the application bundle.
     # _common_binary_linking_attrs().
     if rule_descriptor.requires_deps:
         extra_args = {}
-        if rule_descriptor.product_type == apple_product_type.application:
+        if (rule_descriptor.product_type == apple_product_type.application or
+            rule_descriptor.product_type == apple_product_type.app_clip):
             extra_args["aspects"] = [framework_import_aspect]
 
         attrs.append({
@@ -654,6 +710,27 @@ A list of framework targets (see
 that this target depends on.
 """,
                 **extra_args
+            ),
+        })
+
+    # TODO(b/XXXXXXXX): `sdk_frameworks` was never documented on `ios_application` but it leaked
+    # through due to the old macro passing it to the underlying `apple_binary`. Support this
+    # temporarily for a limited set of product types until we can migrate teams off the attribute,
+    # once explicit build targets are used to propagate linking information for system frameworks.
+    if (rule_descriptor.product_type == apple_product_type.application or
+        rule_descriptor.product_type == apple_product_type.app_extension):
+        attrs.append({
+            "sdk_frameworks": attr.string_list(
+                allow_empty = True,
+                doc = """
+Names of SDK frameworks to link with (e.g., `AddressBook`, `QuartzCore`).
+`UIKit` and `Foundation` are always included, even if this attribute is
+provided and does not list them.
+
+This attribute is discouraged; in general, targets should list system
+framework dependencies in the library targets where that framework is used,
+not in the top-level bundle.
+""",
             ),
         })
 
@@ -715,7 +792,10 @@ set, then the default extension is determined by the application's product_type.
             "test_host": attr.label(
                 aspects = [framework_import_aspect],
                 mandatory = test_host_mandatory,
-                providers = [AppleBundleInfo, MacosApplicationBundleInfo],
+                providers = [
+                    [AppleBundleInfo, MacosApplicationBundleInfo],
+                    [AppleBundleInfo, MacosExtensionBundleInfo],
+                ],
             ),
         })
 
@@ -790,7 +870,10 @@ fashion, such as a Cocoapod.
             "test_host": attr.label(
                 aspects = [framework_import_aspect],
                 mandatory = test_host_mandatory,
-                providers = [AppleBundleInfo, TvosApplicationBundleInfo],
+                providers = [
+                    [AppleBundleInfo, TvosApplicationBundleInfo],
+                    [AppleBundleInfo, TvosExtensionBundleInfo],
+                ],
             ),
         })
 
@@ -846,6 +929,64 @@ ignored.
 """,
             ),
         })
+    elif rule_descriptor.product_type == apple_product_type.framework:
+        attrs.append({
+            "extension_safe": attr.bool(
+                default = False,
+                doc = """
+If true, compiles and links this framework with `-application-extension`, restricting the binary to
+use only extension-safe APIs.
+""",
+            ),
+        })
+
+        if rule_descriptor.requires_deps:
+            extra_args = {}
+            attrs.append({
+                "frameworks": attr.label_list(
+                    providers = [[AppleBundleInfo, IosFrameworkBundleInfo]],
+                    doc = """
+A list of framework targets (see
+[`ios_framework`](https://github.com/bazelbuild/rules_apple/blob/master/doc/rules-ios.md#ios_framework))
+that this target depends on.
+""",
+                    **extra_args
+                ),
+            })
+    elif rule_descriptor.product_type == apple_product_type.static_framework:
+        attrs.append({
+            "hdrs": attr.label_list(
+                allow_files = [".h"],
+                doc = """
+A list of `.h` files that will be publicly exposed by this framework. These headers should have
+framework-relative imports, and if non-empty, an umbrella header named `%{bundle_name}.h` will also
+be generated that imports all of the headers listed here.
+""",
+            ),
+            "umbrella_header": attr.label(
+                allow_single_file = [".h"],
+                doc = """
+An optional single .h file to use as the umbrella header for this framework. Usually, this header
+will have the same name as this target, so that clients can load the header using the #import
+<MyFramework/MyFramework.h> format. If this attribute is not specified (the common use case), an
+umbrella header will be generated under the same name as this target.
+""",
+            ),
+            "avoid_deps": attr.label_list(
+                doc = """
+A list of library targets on which this framework depends in order to compile, but the transitive
+closure of which will not be linked into the framework's binary.
+""",
+            ),
+            "exclude_resources": attr.bool(
+                default = False,
+                doc = """
+Indicates whether resources should be excluded from the bundle. This can be used to avoid
+unnecessarily bundling resources if the static framework is being distributed in a different
+fashion, such as a Cocoapod.
+""",
+            ),
+        })
 
     return attrs
 
@@ -889,13 +1030,6 @@ and is embedded into the binary. Please see
 for what is supported.
 """,
         ),
-        "minimum_os_version": attr.string(
-            mandatory = True,
-            doc = """
-A required string indicating the minimum OS version supported by the target, represented as a
-dotted version number (for example, "10.11").
-""",
-        ),
         "version": attr.label(
             providers = [[AppleBundleVersionInfo]],
             doc = """
@@ -907,44 +1041,99 @@ An `apple_bundle_version` target that represents the version for this target. Se
 
     return attrs
 
-def _create_apple_binary_rule(implementation, platform_type, product_type, doc):
+def _create_apple_binary_rule(
+        implementation,
+        doc,
+        additional_attrs = {},
+        implicit_outputs = None,
+        platform_type = None,
+        product_type = None):
     """Creates an Apple rule that produces a single binary output."""
     rule_attrs = [
         {
-            # TODO(kaipi): Make this attribute private. It is required by the native linking
-            # API.
-            "platform_type": attr.string(default = platform_type),
-            "_product_type": attr.string(default = product_type),
-            "_environment_plist": attr.label(
-                allow_single_file = True,
-                default = "@build_bazel_rules_apple//apple/internal:environment_plist_{}".format(platform_type),
+            "minimum_os_version": attr.string(
+                mandatory = True,
+                doc = """
+A required string indicating the minimum OS version supported by the target, represented as a
+dotted version number (for example, "10.11").
+""",
+            ),
+            "_allowlist_function_transition": attr.label(
+                default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
             ),
         },
     ]
 
-    rule_descriptor = rule_support.rule_descriptor_no_ctx(platform_type, product_type)
-    rule_attrs.append(_COMMON_PRIVATE_TOOL_ATTRS)
-
-    if rule_descriptor.requires_deps:
-        rule_attrs.append(_common_binary_linking_attrs(rule_descriptor))
-
-    rule_attrs.extend(_get_macos_binary_attrs(rule_descriptor))
-
-    if rule_descriptor.rule_transition:
+    if platform_type:
+        rule_attrs.extend([
+            _COMMON_ATTRS,
+            _COMMON_PRIVATE_TOOL_ATTRS,
+            {
+                # TODO(kaipi): Make this attribute private when a platform_type is
+                # specified. It is required by the native linking API.
+                "platform_type": attr.string(default = platform_type),
+                "_environment_plist": attr.label(
+                    allow_single_file = True,
+                    default = "@build_bazel_rules_apple//apple/internal:environment_plist_{}".format(
+                        platform_type,
+                    ),
+                ),
+            },
+        ])
+    else:
         rule_attrs.append({
-            "_allowlist_function_transition": attr.label(
-                default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+            "platform_type": attr.string(
+                doc = """
+The target Apple platform for which to create a binary. This dictates which SDK
+is used for compilation/linking and which flag is used to determine the
+architectures to target. For example, if `ios` is specified, then the output
+binaries/libraries will be created combining all architectures specified by
+`--ios_multi_cpus`. Options are:
+
+*   `ios`: architectures gathered from `--ios_multi_cpus`.
+*   `macos`: architectures gathered from `--macos_cpus`.
+*   `tvos`: architectures gathered from `--tvos_cpus`.
+*   `watchos`: architectures gathered from `--watchos_cpus`.
+""",
+                mandatory = True,
             ),
         })
+
+    if platform_type and product_type:
+        rule_descriptor = rule_support.rule_descriptor_no_ctx(platform_type, product_type)
+        is_executable = rule_descriptor.is_executable
+
+        if rule_descriptor.requires_deps:
+            rule_attrs.append(_common_binary_linking_attrs(
+                default_binary_type = rule_descriptor.binary_type,
+                deps_cfg = rule_descriptor.deps_cfg,
+                product_type = product_type,
+            ))
+
+        rule_attrs.extend(
+            [
+                {"_product_type": attr.string(default = product_type)},
+            ] + _get_macos_binary_attrs(rule_descriptor),
+        )
+    else:
+        is_executable = False
+        rule_attrs.append(_common_binary_linking_attrs(
+            default_binary_type = "executable",
+            deps_cfg = apple_common.multi_arch_split,
+            product_type = None,
+        ))
+
+    rule_attrs.append(additional_attrs)
 
     return rule(
         implementation = implementation,
         # TODO(kaipi): Replace dicts.add with a version that errors on duplicate keys.
         attrs = dicts.add(*rule_attrs),
-        cfg = rule_descriptor.rule_transition,
+        cfg = transition_support.apple_rule_transition,
         doc = doc,
-        executable = rule_descriptor.is_executable,
+        executable = is_executable,
         fragments = ["apple", "cpp", "objc"],
+        outputs = implicit_outputs,
     )
 
 def _create_apple_bundling_rule(implementation, platform_type, product_type, doc):
@@ -964,11 +1153,19 @@ def _create_apple_bundling_rule(implementation, platform_type, product_type, doc
 
     rule_descriptor = rule_support.rule_descriptor_no_ctx(platform_type, product_type)
 
-    rule_attrs.append(_COMMON_PRIVATE_TOOL_ATTRS)
-    rule_attrs.extend(_get_common_bundling_attributes(rule_descriptor))
+    rule_attrs.extend(
+        [
+            _COMMON_ATTRS,
+            _COMMON_PRIVATE_TOOL_ATTRS,
+        ] + _get_common_bundling_attributes(rule_descriptor),
+    )
 
     if rule_descriptor.requires_deps:
-        rule_attrs.append(_common_binary_linking_attrs(rule_descriptor))
+        rule_attrs.append(_common_binary_linking_attrs(
+            default_binary_type = rule_descriptor.binary_type,
+            deps_cfg = rule_descriptor.deps_cfg,
+            product_type = product_type,
+        ))
 
     is_test_product_type = _is_test_product_type(rule_descriptor.product_type)
     if is_test_product_type:
@@ -988,19 +1185,18 @@ def _create_apple_bundling_rule(implementation, platform_type, product_type, doc
     elif platform_type == "watchos":
         rule_attrs.extend(_get_watchos_attrs(rule_descriptor))
 
-    if rule_descriptor.rule_transition or rule_descriptor.force_transition_allowlist:
-        rule_attrs.append({
-            "_allowlist_function_transition": attr.label(
-                default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
-            ),
-        })
+    rule_attrs.append({
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
+    })
 
     archive_name = "%{name}" + rule_descriptor.archive_extension
     return rule(
         implementation = implementation,
         # TODO(kaipi): Replace dicts.add with a version that errors on duplicate keys.
         attrs = dicts.add(*rule_attrs),
-        cfg = rule_descriptor.rule_transition,
+        cfg = transition_support.apple_rule_transition,
         doc = doc,
         executable = rule_descriptor.is_executable,
         fragments = ["apple", "cpp", "objc"],
@@ -1018,13 +1214,21 @@ def _create_apple_test_rule(implementation, doc, platform_type):
 
     return rule(
         implementation = implementation,
-        attrs = dicts.add(_COMMON_PRIVATE_TOOL_ATTRS, _COMMON_TEST_ATTRS, *extra_attrs),
+        attrs = dicts.add(
+            _COMMON_ATTRS,
+            _COMMON_PRIVATE_TOOL_ATTRS,
+            _COMMON_TEST_ATTRS,
+            *extra_attrs
+        ),
         doc = doc,
         test = True,
     )
 
 rule_factory = struct(
-    common_tool_attributes = _COMMON_PRIVATE_TOOL_ATTRS,
+    common_tool_attributes = dicts.add(
+        _COMMON_ATTRS,
+        _COMMON_PRIVATE_TOOL_ATTRS,
+    ),
     create_apple_binary_rule = _create_apple_binary_rule,
     create_apple_bundling_rule = _create_apple_bundling_rule,
     create_apple_test_rule = _create_apple_test_rule,

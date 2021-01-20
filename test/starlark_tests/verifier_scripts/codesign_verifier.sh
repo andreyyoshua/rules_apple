@@ -29,3 +29,11 @@ if [[ -d "$CONTENT_ROOT/Frameworks" ]]; then
   # Assert that the frameworks have not been resigned.
   assert_frameworks_not_resigned_given_output "$BUNDLE_ROOT"
 fi
+
+# If it has any App Clips, assert that they are signed as well.
+if [[ -d "$CONTENT_ROOT/AppClips" ]]; then
+  for clip in \
+      $(find "$CONTENT_ROOT/AppClips" -type d -maxdepth 1 -mindepth 1); do
+    assert_is_codesigned "$clip"
+  done
+fi

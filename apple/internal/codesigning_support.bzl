@@ -118,12 +118,16 @@ def _codesign_args_for_path(
             maybe_quote(identity),
         ])
 
+    # The entitlements rule ensures that entitlements_file is None or a file
+    # containing only "com.apple.security.get-task-allow" when building for the
+    # simulator.
+    if path_to_sign.use_entitlements and entitlements_file:
+        cmd_codesigning.extend([
+            "--entitlements",
+            maybe_quote(entitlements_file.path),
+        ])
+
     if is_device:
-        if path_to_sign.use_entitlements and entitlements_file:
-            cmd_codesigning.extend([
-                "--entitlements",
-                maybe_quote(entitlements_file.path),
-            ])
         cmd_codesigning.append("--force")
     else:
         cmd_codesigning.extend([
@@ -149,6 +153,10 @@ def _codesign_args_for_path(
                 maybe_double_quote(signed_framework),
             ])
 
+    extra_opts_raw = getattr(ctx.attr, "codesignopts", [])
+    extra_opts = [ctx.expand_make_variables("codesignopts", opt, {}) for opt in extra_opts_raw]
+    cmd_codesigning.append("--")
+    cmd_codesigning.extend(extra_opts)
     return cmd_codesigning
 
 def _path_to_sign(path, is_directory = False, signed_frameworks = [], use_entitlements = True):
@@ -378,13 +386,7 @@ def _post_process_and_sign_archive_action(
       entitlements: Optional file representing the entitlements to sign with.
     """
     input_files = [input_archive]
-
-    if entitlements:
-        input_files.append(entitlements)
-
-    provisioning_profile = getattr(ctx.file, "provisioning_profile", None)
-    if provisioning_profile:
-        input_files.append(provisioning_profile)
+    processing_tools = []
 
     signing_command_lines = _codesigning_command(
         ctx,
@@ -393,8 +395,13 @@ def _post_process_and_sign_archive_action(
         signed_frameworks,
         bundle_path = archive_codesigning_path,
     )
-
-    processing_tools = [ctx.executable._codesigningtool]
+    if signing_command_lines:
+        processing_tools.append(ctx.executable._codesigningtool)
+        if entitlements:
+            input_files.append(entitlements)
+        provisioning_profile = getattr(ctx.file, "provisioning_profile", None)
+        if provisioning_profile:
+            input_files.append(provisioning_profile)
 
     ipa_post_processor = ctx.executable.ipa_post_processor
     ipa_post_processor_path = ""
@@ -407,10 +414,30 @@ def _post_process_and_sign_archive_action(
     compression_requested = defines.bool_value(ctx, "apple.compress_ipa", False)
     should_compress = (ctx.var["COMPILATION_MODE"] == "opt") or compression_requested
 
+    # TODO(b/163217926): These are kept the same for the three different actions
+    # that could be run to ensure anything keying off these values continues to
+    # work. After some data is collected, the values likely can be revisited and
+    # changed.
+    mnemonic = "ProcessAndSign"
+    progress_message = "Processing and signing %s" % ctx.label.name
+
+    # If there is no work to be done, skip the processing/signing action, just
+    # copy the file over.
+    has_work = any([signing_command_lines, ipa_post_processor_path, should_compress])
+    if not has_work:
+        ctx.actions.run_shell(
+            inputs = [input_archive],
+            outputs = [output_archive],
+            mnemonic = mnemonic,
+            progress_message = progress_message,
+            command = "cp -p '%s' '%s'" % (input_archive.path, output_archive.path),
+        )
+        return
+
     process_and_sign_template = intermediates.file(
         ctx.actions,
         ctx.label.name,
-        "process-and-sign.sh",
+        "process-and-sign-%s.sh" % hash(output_archive.path),
     )
     ctx.actions.expand_template(
         template = ctx.file._process_and_sign_template,
@@ -426,23 +453,45 @@ def _post_process_and_sign_archive_action(
         },
     )
 
-    legacy_actions.run(
-        ctx,
-        inputs = input_files,
-        outputs = [output_archive],
-        executable = process_and_sign_template,
-        mnemonic = "ProcessAndSign",
-        progress_message = "Processing and signing %s" % ctx.label.name,
-        execution_requirements = {
-            # Added so that the output of this action is not cached remotely, in case multiple
-            # developers sign the same artifact with different identities.
-            "no-cache": "1",
-            # Unsure, but may be needed for keychain access, especially for files that live in
-            # $HOME.
-            "no-sandbox": "1",
-        },
-        tools = processing_tools,
-    )
+    # Build up some arguments for the script to allow logging to tell what work
+    # is being done within the action's script.
+    arguments = []
+    if signing_command_lines:
+        arguments.append("should_sign")
+    if ipa_post_processor_path:
+        arguments.append("should_process")
+    if should_compress:
+        arguments.append("should_compress")
+
+    run_on_darwin = any([signing_command_lines, ipa_post_processor_path])
+    if run_on_darwin:
+        legacy_actions.run(
+            ctx,
+            inputs = input_files,
+            outputs = [output_archive],
+            executable = process_and_sign_template,
+            arguments = arguments,
+            mnemonic = mnemonic,
+            progress_message = progress_message,
+            execution_requirements = {
+                # Added so that the output of this action is not cached remotely, in case multiple
+                # developers sign the same artifact with different identities.
+                "no-cache": "1",
+                # Unsure, but may be needed for keychain access, especially for files that live in
+                # $HOME.
+                "no-sandbox": "1",
+            },
+            tools = processing_tools,
+        )
+    else:
+        ctx.actions.run(
+            inputs = input_files,
+            outputs = [output_archive],
+            executable = process_and_sign_template,
+            arguments = arguments,
+            mnemonic = mnemonic,
+            progress_message = progress_message,
+        )
 
 def _sign_binary_action(ctx, input_binary, output_binary):
     """Signs the input binary file, copying it into the given output binary file.
@@ -467,14 +516,10 @@ def _sign_binary_action(ctx, input_binary, output_binary):
         ctx,
         inputs = [input_binary],
         outputs = [output_binary],
-        command = [
-            "/bin/bash",
-            "-c",
-            "cp {input_binary} {output_binary}".format(
-                input_binary = input_binary.path,
-                output_binary = output_binary.path,
-            ) + "\n" + signing_commands,
-        ],
+        command = "cp {input_binary} {output_binary}".format(
+            input_binary = input_binary.path,
+            output_binary = output_binary.path,
+        ) + "\n" + signing_commands,
         mnemonic = "SignBinary",
         execution_requirements = {
             # Added so that the output of this action is not cached remotely, in case multiple

@@ -16,28 +16,29 @@
 
 import os
 import shutil
-import subprocess
 import sys
 import time
 
+from build_bazel_rules_apple.tools.bitcode_strip import bitcode_strip
 from build_bazel_rules_apple.tools.codesigningtool import codesigningtool
-from build_bazel_rules_apple.tools.wrapper_common import execute
 from build_bazel_rules_apple.tools.wrapper_common import lipo
-
-
-def _sign_framework(args):
-  codesigningtool.main(args)
 
 
 def _zip_framework(framework_temp_path, output_zip_path):
   """Saves the framework as a zip file for caching."""
   zip_epoch_timestamp = 946684800  # 2000-01-01 00:00
+  timestamp = zip_epoch_timestamp + time.timezone
   if os.path.exists(framework_temp_path):
-    for root, _, files in os.walk(framework_temp_path):
-      for file_name in files:
+    # Apply the fixed utime to the files within directories, then their parent
+    # directories and files adjacent to those directories.
+    #
+    # Avoids accidentally resetting utime on the directories when utime is set
+    # on the files within.
+    for root, dirs, files in os.walk(framework_temp_path, topdown=False):
+      for file_name in dirs + files:
         file_path = os.path.join(root, file_name)
-        timestamp = zip_epoch_timestamp + time.timezone
         os.utime(file_path, (timestamp, timestamp))
+    os.utime(framework_temp_path, (timestamp, timestamp))
   shutil.make_archive(os.path.splitext(output_zip_path)[0], "zip",
                       os.path.dirname(framework_temp_path),
                       os.path.basename(framework_temp_path))
@@ -103,6 +104,10 @@ def main():
       "expected to represent the target architectures"
   )
   parser.add_argument(
+      "--strip_bitcode", action="store_true", default=False, help="strip "
+      "bitcode from the imported frameworks."
+  )
+  parser.add_argument(
       "--framework_file", type=str, action="append", help="path to a file "
       "scoped to one of the imported frameworks, distinct from the binary files"
   )
@@ -150,6 +155,12 @@ def main():
     if status_code:
       return 1
 
+    # Strip bitcode from the output framework binary
+    if args.strip_bitcode:
+      output_binary = os.path.join(args.temp_path,
+                                   os.path.basename(framework_binary))
+      bitcode_strip.invoke(output_binary, output_binary)
+
   if args.framework_file:
     for framework_file in args.framework_file:
       status_code = _copy_framework_file(framework_file,
@@ -158,7 +169,10 @@ def main():
       if status_code:
         return 1
 
-  _sign_framework(args)
+  # Attempt to sign the framework, check for an error when signing.
+  status_code = codesigningtool.main(args)
+  if status_code:
+    return status_code
 
   _zip_framework(args.temp_path, args.output_zip)
 

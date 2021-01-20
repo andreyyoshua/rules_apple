@@ -2,6 +2,7 @@ load("@rules_cc//cc:defs.bzl", "objc_library")
 load(
     "//apple:tvos.bzl",
     "tvos_application",
+    "tvos_dynamic_framework",
     "tvos_extension",
     "tvos_framework",
     "tvos_static_framework",
@@ -12,8 +13,9 @@ load(
     "//apple:apple.bzl",
     "apple_dynamic_framework_import",
 )
+load("//test/starlark_tests:common.bzl", "FIXTURE_TAGS")
 load(
-    "//test/testdata/frameworks:generate_framework.bzl",
+    "//test/testdata/fmwk:generate_framework.bzl",
     "generate_import_framework",
 )
 load(
@@ -43,10 +45,7 @@ tvos_application(
         "//test/starlark_tests/resources:localization",
         "//test/starlark_tests/resources:resource_bundle",
     ],
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_main_lib",
     ],
@@ -60,10 +59,7 @@ tvos_application(
         "//test/starlark_tests/resources:Info.plist",
     ],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_main_lib",
     ],
@@ -80,10 +76,7 @@ tvos_application(
     ],
     minimum_os_version = "9.0",
     provisioning_profile = "//test/testdata/provisioning:integration_testing_ios.mobileprovision",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_main_lib",
     ],
@@ -98,10 +91,7 @@ tvos_extension(
     ],
     minimum_os_version = "9.0",
     provisioning_profile = "//test/testdata/provisioning:integration_testing_ios.mobileprovision",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_main_lib",
     ],
@@ -117,10 +107,7 @@ tvos_application(
         "//test/starlark_tests/resources:Info.plist",
     ],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_main_lib",
     ],
@@ -138,10 +125,7 @@ tvos_application(
     ],
     ipa_post_processor = "//test/starlark_tests/targets_under_test/apple:ipa_post_processor_verify_codesigning",
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_main_lib",
     ],
@@ -156,10 +140,7 @@ tvos_application(
     ],
     ipa_post_processor = "//test/starlark_tests/targets_under_test/apple:ipa_post_processor_verify_codesigning",
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_main_lib",
     ],
@@ -173,10 +154,7 @@ tvos_application(
         "//test/starlark_tests/resources:Info.plist",
     ],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_main_lib",
     ],
@@ -190,10 +168,7 @@ tvos_application(
     ],
     ipa_post_processor = "//test/starlark_tests/targets_under_test/apple:ipa_post_processor_verify_codesigning",
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         ":dynamic_fmwk_depending_lib",
         "//test/starlark_tests/resources:objc_main_lib",
@@ -207,10 +182,7 @@ tvos_framework(
         "//test/starlark_tests/resources:Info.plist",
     ],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_shared_lib",
     ],
@@ -227,10 +199,7 @@ tvos_framework(
     ],
     linkopts = ["-dead_strip"],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_shared_lib",
     ],
@@ -244,10 +213,7 @@ tvos_framework(
     ],
     minimum_os_version = "9.0",
     provisioning_profile = "//test/testdata/provisioning:integration_testing_ios.mobileprovision",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_shared_lib",
     ],
@@ -261,10 +227,7 @@ tvos_framework(
     ],
     minimum_os_version = "9.0",
     provisioning_profile = "//test/testdata/provisioning:integration_testing_ios.mobileprovision",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_shared_lib",
     ],
@@ -278,10 +241,7 @@ tvos_framework(
         "//test/starlark_tests/resources:Info.plist",
     ],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_shared_lib",
     ],
@@ -296,10 +256,7 @@ tvos_framework(
     ],
     minimum_os_version = "9.0",
     provisioning_profile = "//test/testdata/provisioning:integration_testing_ios.mobileprovision",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_shared_lib",
     ],
@@ -310,12 +267,14 @@ tvos_framework(
 objc_library(
     name = "dynamic_fmwk_depending_lib",
     srcs = ["@bazel_tools//tools/objc:dummy.c"],
+    tags = FIXTURE_TAGS,
     deps = [":imported_tvos_dynamic_fmwk"],
 )
 
 apple_dynamic_framework_import(
     name = "imported_tvos_dynamic_fmwk",
     framework_imports = [":generated_tvos_dynamic_fmwk"],
+    tags = FIXTURE_TAGS,
 )
 
 generate_import_framework(
@@ -324,6 +283,7 @@ generate_import_framework(
     libtype = "dynamic",
     minimum_os_version = "9.0",
     sdk = "appletvsimulator",
+    tags = FIXTURE_TAGS,
 )
 
 # ---------------------------------------------------------------------------------------
@@ -334,10 +294,7 @@ tvos_static_framework(
         "//test/starlark_tests/resources:shared.h",
     ],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [
         "//test/starlark_tests/resources:objc_shared_lib",
     ],
@@ -351,10 +308,7 @@ tvos_ui_test(
         "//test/starlark_tests/resources:Info.plist",
     ],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     test_host = ":app",
     deps = [
         "//test/starlark_tests/resources:objc_test_lib",
@@ -369,10 +323,7 @@ tvos_ui_test(
         "//test/starlark_tests/resources:Info.plist",
     ],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     test_host = ":app",
     deps = [
         "//test/starlark_tests/resources:objc_test_lib",
@@ -385,10 +336,7 @@ tvos_unit_test(
         "//test/starlark_tests/resources:Info.plist",
     ],
     minimum_os_version = "9.0",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     test_host = ":app",
     deps = [
         "//test/starlark_tests/resources:objc_test_lib",
@@ -405,10 +353,7 @@ tvos_application(
     ],
     minimum_os_version = "9.0",
     provisioning_profile = "//test/testdata/provisioning:integration_testing_ios.mobileprovision",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [":swift_lib"],
 )
 
@@ -420,10 +365,7 @@ tvos_application(
     ],
     minimum_os_version = "9.0",
     provisioning_profile = "//test/testdata/provisioning:integration_testing_ios.mobileprovision",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [":objc_to_swift_lib"],
 )
 
@@ -435,20 +377,103 @@ tvos_application(
     ],
     minimum_os_version = "12.2",
     provisioning_profile = "//test/testdata/provisioning:integration_testing_ios.mobileprovision",
-    tags = [
-        "manual",
-        "notap",
-    ],
+    tags = FIXTURE_TAGS,
     deps = [":swift_lib"],
 )
 
 swift_library(
     name = "swift_lib",
     srcs = ["//test/testdata/sources:main.swift"],
+    tags = FIXTURE_TAGS,
 )
 
 objc_library(
     name = "objc_to_swift_lib",
     srcs = ["@bazel_tools//tools/objc:dummy.c"],
+    tags = FIXTURE_TAGS,
     deps = [":swift_lib"],
+)
+
+# ---------------------------------------------------------------------------------------
+
+swift_library(
+    name = "basic_framework_lib",
+    module_name = "BasicFramework",
+    srcs = [
+        "//test/starlark_tests/resources:BasicFramework.swift",
+    ],
+    visibility = ["//visibility:public"],
+    features = ["swift.no_generated_module_map"],
+    tags = FIXTURE_TAGS,
+)
+
+tvos_dynamic_framework(
+    name = "basic_framework",
+    bundle_name = "BasicFramework",
+    bundle_id = "com.google.example.framework",
+    infoplists = [
+        "//test/starlark_tests/resources:Info.plist",
+    ],
+    minimum_os_version = "14.0",
+    tags = FIXTURE_TAGS,
+    deps = [
+        ":basic_framework_lib",
+    ],
+)
+
+swift_library(
+    name = "basic_framework_with_direct_dependency_lib",
+    module_name = "DirectDependencyTest",
+    srcs = [
+        "//test/starlark_tests/resources:DirectDependencyTest.swift",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":basic_framework_lib",
+    ],
+    features = ["swift.no_generated_module_map"],
+    tags = FIXTURE_TAGS,
+)
+
+tvos_dynamic_framework(
+    name = "basic_framework_with_direct_dependency",
+    bundle_name = "DirectDependencyTest",
+    bundle_id = "com.google.example.framework",
+    infoplists = [
+        "//test/starlark_tests/resources:Info.plist",
+    ],
+    minimum_os_version = "14.0",
+    tags = FIXTURE_TAGS,
+    deps = [
+        ":basic_framework_with_direct_dependency_lib",
+    ],
+)
+
+swift_library(
+    name = "basic_framework_with_transitive_dependency_lib",
+    module_name = "TransitiveDependencyTest",
+    srcs = [
+        "//test/starlark_tests/resources:TransitiveDependencyTest.swift",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":basic_framework_lib",
+        ":basic_framework_with_direct_dependency_lib",
+    ],
+    features = ["swift.no_generated_module_map"],
+    tags = FIXTURE_TAGS,
+)
+
+tvos_dynamic_framework(
+    name = "basic_framework_with_transitive_dependency",
+    bundle_name = "TransitiveDependencyTest",
+    bundle_id = "com.google.example.framework",
+    infoplists = [
+        "//test/starlark_tests/resources:Info.plist",
+    ],
+    minimum_os_version = "14.0",
+    tags = FIXTURE_TAGS,
+    deps = [
+        ":basic_framework_with_transitive_dependency_lib",
+    ],
 )

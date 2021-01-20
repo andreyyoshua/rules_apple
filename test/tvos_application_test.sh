@@ -112,6 +112,19 @@ EOF
   expect_log 'Target "//app:app" is missing CFBundleShortVersionString.'
 }
 
+# Tests that the linkmap outputs are produced when --objc_generate_linkmap is
+# present.
+function test_linkmaps_generated() {
+  create_common_files
+  create_minimal_tvos_application
+  do_build tvos --objc_generate_linkmap //app:app || fail "Should build"
+
+  declare -a archs=( $(current_archs tvos) )
+  for arch in "${archs[@]}"; do
+    assert_exists "test-bin/app/app_${arch}.linkmap"
+  done
+}
+
 # Tests that failures to extract from a provisioning profile are propertly
 # reported.
 function test_provisioning_profile_extraction_failure() {
@@ -136,6 +149,18 @@ EOF
   # The fact that multiple things are tried is left as an impl detail and
   # only the final message is looked for.
   expect_log 'While processing target "//app:app_entitlements", failed to extract from the provisioning profile "app/bogus.mobileprovision".'
+}
+
+# Tests that symbols files are included in the ipa when builds with
+# --apple_generate_dsym and --define=apple.package_symbols=yes.
+function test_ipa_contains_symbols() {
+  create_common_files
+  create_minimal_tvos_application
+  do_build tvos //app:app \
+      --apple_generate_dsym \
+      --define=apple.package_symbols=yes || fail "Should build"
+
+  assert_ipa_contains_symbols "test-bin/app/app.ipa" "Payload/app.app/app"
 }
 
 run_suite "tvos_application bundling tests"

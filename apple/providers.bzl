@@ -53,6 +53,9 @@ the binary directly at analysis time; for example, for code coverage.
         "bundle_name": """
 `string`. The name of the bundle, without the extension.
 """,
+        "executable_name": """
+`string`. The name of the executable that was bundled.
+""",
         "entitlements": "`File`. Entitlements file used to codesign, if any.",
         "extension_safe": """
 Boolean. True if the target propagating this provider was
@@ -133,6 +136,24 @@ to ensure that they are explicitly produced as outputs of the build.
     },
 )
 
+AppleFrameworkImportInfo = provider(
+    doc = "Provider that propagates information about framework import targets.",
+    fields = {
+        "framework_imports": """
+Depset of Files that represent framework imports that need to be bundled in the top level
+application bundle under the Frameworks directory.
+""",
+        "dsym_imports": """
+Depset of Files that represent dSYM imports that need to be processed to
+provide .symbols files for packaging into the .ipa file if requested in the
+build with --define=apple.package_symbols=(yes|true|1).
+""",
+        "build_archs": """
+Depset of strings that represent binary architectures reported from the current build.
+""",
+    },
+)
+
 AppleResourceInfo = provider(
     doc = "Provider that propagates buckets of resources that are differentiated by type.",
     # @unsorted-dict-items
@@ -142,6 +163,8 @@ AppleResourceInfo = provider(
         "infoplists": """Plist files to be merged and processed. Plist files that should not be
 merged into the root Info.plist should be propagated in `plists`. Because of this, infoplists should
 only be bucketed with the `bucketize_typed` method.""",
+        "metals": """Metal Shading Language source files to be compiled into a single .metallib file
+and bundled at the top level.""",
         "mlmodels": "Core ML model files that should be processed and bundled at the top level.",
         "plists": "Resource Plist files that should not be merged into Info.plist",
         "pngs": "PNG images which are not bundled in an .xcassets folder.",
@@ -152,7 +175,7 @@ only be bucketed with the `bucketize_typed` method.""",
         "unprocessed": "Generic resources not mapped to the other types.",
         "xibs": "XIB Interface files.",
         "owners": """Depset of (resource, owner) pairs.""",
-        "processed_origins": """Depset of (processed resource, resource) pairs.""",
+        "processed_origins": """Depset of (processed resource, resource list) pairs.""",
         "unowned_resources": """Depset of unowned resources.""",
     },
 )
@@ -167,6 +190,7 @@ a "marker" to indicate that a target is specifically an Apple resource bundle
 dependency is an Apple resource bundle should use this provider to describe that
 requirement.
 """,
+    fields = [],
 )
 
 AppleTestInfo = provider(
@@ -259,9 +283,23 @@ a "marker" to indicate that a target is specifically an iOS application bundle
 dependency is an iOS application should use this provider to describe that
 requirement.
 """,
+    fields = [],
+)
+
+IosAppClipBundleInfo = provider(
+    fields = [],
+    doc = """
+Denotes that a target is an iOS app clip.
+
+This provider does not contain any fields of its own at this time but is used as
+a "marker" to indicate that a target is specifically an iOS app clip bundle (and
+not some other Apple bundle). Rule authors who wish to require that a dependency
+is an iOS app clip should use this provider to describe that requirement.
+""",
 )
 
 IosExtensionBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is an iOS application extension.
 
@@ -274,6 +312,7 @@ provider to describe that requirement.
 )
 
 IosFrameworkBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is an iOS dynamic framework.
 
@@ -286,6 +325,7 @@ that requirement.
 )
 
 IosStaticFrameworkBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is an iOS static framework.
 
@@ -298,6 +338,7 @@ that requirement.
 )
 
 IosImessageApplicationBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is an iOS iMessage application.
 
@@ -310,6 +351,7 @@ that requirement.
 )
 
 IosImessageExtensionBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is an iOS iMessage extension.
 
@@ -322,6 +364,7 @@ that requirement.
 )
 
 IosStickerPackExtensionBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is an iOS Sticker Pack extension.
 
@@ -334,6 +377,7 @@ that requirement.
 )
 
 IosXcTestBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes a target that is an iOS .xctest bundle.
 
@@ -345,6 +389,7 @@ is an iOS .xctest bundle should use this provider to describe that requirement.
 )
 
 MacosApplicationBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a macOS application.
 
@@ -357,6 +402,7 @@ requirement.
 )
 
 MacosBundleBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a macOS loadable bundle.
 
@@ -369,6 +415,7 @@ requirement.
 )
 
 MacosExtensionBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a macOS application extension.
 
@@ -381,6 +428,7 @@ provider to describe that requirement.
 )
 
 MacosKernelExtensionBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a macOS kernel extension.
 
@@ -393,6 +441,7 @@ requirement.
 )
 
 MacosQuickLookPluginBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a macOS Quick Look Generator bundle.
 
@@ -405,6 +454,7 @@ that requirement.
 )
 
 MacosSpotlightImporterBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a macOS Spotlight Importer bundle.
 
@@ -417,6 +467,7 @@ requirement.
 )
 
 MacosXPCServiceBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a macOS XPC Service bundle.
 
@@ -429,6 +480,7 @@ requirement.
 )
 
 MacosXcTestBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes a target that is a macOS .xctest bundle.
 
@@ -441,6 +493,7 @@ requirement.
 )
 
 TvosApplicationBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a tvOS application.
 
@@ -453,6 +506,7 @@ requirement.
 )
 
 TvosExtensionBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a tvOS application extension.
 
@@ -465,6 +519,7 @@ provider to describe that requirement.
 )
 
 TvosFrameworkBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a tvOS dynamic framework.
 
@@ -477,6 +532,7 @@ that requirement.
 )
 
 TvosStaticFrameworkBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is an tvOS static framework.
 
@@ -489,6 +545,7 @@ that requirement.
 )
 
 TvosXcTestBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes a target that is a tvOS .xctest bundle.
 
@@ -500,6 +557,7 @@ is a tvOS .xctest bundle should use this provider to describe that requirement.
 )
 
 WatchosApplicationBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a watchOS application.
 
@@ -512,6 +570,7 @@ requirement.
 )
 
 WatchosExtensionBundleInfo = provider(
+    fields = [],
     doc = """
 Denotes that a target is a watchOS application extension.
 
@@ -520,5 +579,18 @@ a "marker" to indicate that a target is specifically a watchOS application
 extension bundle (and not some other Apple bundle). Rule authors who wish to
 require that a dependency is a watchOS application extension should use this
 provider to describe that requirement.
+""",
+)
+
+WatchosStaticFrameworkBundleInfo = provider(
+    fields = [],
+    doc = """
+Denotes that a target is an watchOS static framework.
+
+This provider does not contain any fields of its own at this time but is used as
+a "marker" to indicate that a target is specifically a watchOS static framework
+bundle (and not some other Apple bundle). Rule authors who wish to require that
+a dependency is a watchOS static framework should use this provider to describe
+that requirement.
 """,
 )

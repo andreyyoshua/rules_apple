@@ -23,6 +23,10 @@ load(
     "defines",
 )
 load(
+    "@build_bazel_rules_apple//apple/internal:apple_product_type.bzl",
+    "apple_product_type",
+)
+load(
     "@build_bazel_rules_apple//apple/internal:bundling_support.bzl",
     "bundling_support",
 )
@@ -37,6 +41,10 @@ load(
 load(
     "@build_bazel_rules_apple//apple/internal:resource_actions.bzl",
     "resource_actions",
+)
+load(
+    "@build_bazel_rules_apple//apple/internal:swift_support.bzl",
+    "swift_support",
 )
 load(
     "@build_bazel_rules_apple//apple:common.bzl",
@@ -130,6 +138,17 @@ def _include_debug_entitlements(ctx):
         return False
     return True
 
+def _include_app_clip_entitlements(ctx):
+    """Returns a value indicating whether app clip entitlements should be used.
+
+    Args:
+      ctx: The Starlark context.
+
+    Returns:
+      True if the app clip entitlements should be included, otherwise False.
+    """
+    return ctx.attr.product_type == apple_product_type.app_clip
+
 def _extract_signing_info(ctx):
     """Inspects the current context and extracts the signing information.
 
@@ -219,8 +238,26 @@ def _entitlements_impl(ctx):
     # linked into a segment for some build, the output of this rule is an input to
     # almost all the bundling code, so a bad bundle id actually gets here. In an ideal
     # world, validation wouldn't have to happen here.
+    actions = ctx.actions
     bundle_id = ctx.attr.bundle_id
     bundling_support.validate_bundle_id(bundle_id)
+
+    deps = getattr(ctx.attr, "deps", None)
+    uses_swift = swift_support.uses_swift(deps) if deps else False
+
+    # Only need as much platform information as this rule is able to give, for entitlement file
+    # processing.
+    platform_prerequisites = platform_support.platform_prerequisites(
+        apple_fragment = ctx.fragments.apple,
+        config_vars = ctx.var,
+        device_families = None,
+        explicit_minimum_os = None,
+        objc_fragment = ctx.fragments.objc,
+        platform_type_string = str(ctx.fragments.apple.single_arch_platform.platform_type),
+        uses_swift = uses_swift,
+        xcode_path_wrapper = None,
+        xcode_version_config = ctx.attr._xcode_config[apple_common.XcodeVersionConfig],
+    )
 
     signing_info = _extract_signing_info(ctx)
     plists = []
@@ -230,6 +267,9 @@ def _entitlements_impl(ctx):
     if _include_debug_entitlements(ctx):
         get_task_allow = {"get-task-allow": True}
         forced_plists.append(struct(**get_task_allow))
+    if _include_app_clip_entitlements(ctx):
+        app_clip = {"com.apple.developer.on-demand-install-capable": True}
+        forced_plists.append(struct(**app_clip))
 
     inputs = list(plists)
 
@@ -271,9 +311,11 @@ def _entitlements_impl(ctx):
     )
 
     resource_actions.plisttool_action(
-        ctx,
+        actions = actions,
         inputs = inputs,
         outputs = [final_entitlements],
+        platform_prerequisites = platform_prerequisites,
+        plisttool = ctx.executable._plisttool,
         control_file = control_file,
         mnemonic = "ProcessEntitlementsFiles",
     )
@@ -281,13 +323,39 @@ def _entitlements_impl(ctx):
     # Only propagate linkopts for simulator builds to embed the entitlements into
     # the binary; for device builds, the entitlements are applied during signing.
     if not is_device:
+        simulator_entitlements = None
+        if _include_debug_entitlements(ctx):
+            simulator_entitlements = ctx.actions.declare_file(
+                "%s.simulator.entitlements" % ctx.label.name,
+            )
+            simulator_control = struct(
+                plists = [],
+                forced_plists = [struct(**{"com.apple.security.get-task-allow": True})],
+                output = simulator_entitlements.path,
+                target = str(ctx.label),
+            )
+            simulator_control_file = _new_entitlements_artifact(ctx, "simulator-plisttool-control")
+            ctx.actions.write(
+                output = simulator_control_file,
+                content = simulator_control.to_json(),
+            )
+            resource_actions.plisttool_action(
+                actions = actions,
+                inputs = [],
+                outputs = [simulator_entitlements],
+                platform_prerequisites = platform_prerequisites,
+                plisttool = ctx.executable._plisttool,
+                control_file = simulator_control_file,
+                mnemonic = "ProcessSimulatorEntitlementsFile",
+            )
+
         return [
             linking_support.sectcreate_objc_provider(
                 "__TEXT",
                 "__entitlements",
                 final_entitlements,
             ),
-            AppleEntitlementsInfo(final_entitlements = final_entitlements),
+            AppleEntitlementsInfo(final_entitlements = simulator_entitlements),
         ]
     else:
         return [
@@ -306,6 +374,8 @@ entitlements = rule(
         ),
         # Used to pass the platform type through from the calling rule.
         "platform_type": attr.string(),
+        # Used to pass the product type through from the calling rule.
+        "product_type": attr.string(),
         "provisioning_profile": attr.label(
             allow_single_file = [".mobileprovision", ".provisionprofile"],
         ),

@@ -5,8 +5,12 @@ load(
     "apple_static_framework_import",
 )
 load(
-    "//test/testdata/frameworks:generate_framework.bzl",
+    "//test/testdata/fmwk:generate_framework.bzl",
     "generate_import_framework",
+)
+load(
+    "//test/testdata/fmwk:generate_framework_dsym.bzl",
+    "generate_import_framework_dsym",
 )
 
 # Public only because these are used by the integration tests from generated
@@ -17,6 +21,22 @@ licenses(["notice"])
 
 apple_dynamic_framework_import(
     name = "iOSImportedDynamicFramework",
+    framework_imports = [":iOSDynamicFramework"],
+)
+
+apple_dynamic_framework_import(
+    name = "iOSImportedDynamicFrameworkWithBitcode",
+    framework_imports = [":iOSDynamicFrameworkWithBitcode"],
+)
+
+apple_dynamic_framework_import(
+    name = "iOSImportedDynamicFrameworkWithDebugInfo",
+    framework_imports = [":iOSDynamicFrameworkWithDebugInfo"],
+)
+
+apple_dynamic_framework_import(
+    name = "iOSImportedDynamicFrameworkWithDsym",
+    dsym_imports = [":iOSDynamicFrameworkDsym"],
     framework_imports = [":iOSDynamicFramework"],
 )
 
@@ -52,6 +72,7 @@ filegroup(
         "BUILD",
         "generate_framework.bzl",
         "generate_framework.py",
+        "generate_framework_dsym.bzl",
     ],
 )
 
@@ -65,6 +86,29 @@ py_binary(
 generate_import_framework(
     name = "iOSDynamicFramework",
     archs = ["x86_64"],
+    libtype = "dynamic",
+    minimum_os_version = "11.0",
+    sdk = "iphonesimulator",
+)
+
+generate_import_framework(
+    name = "iOSDynamicFrameworkWithDebugInfo",
+    archs = ["x86_64"],
+    embed_debug_info = True,
+    libtype = "dynamic",
+    minimum_os_version = "11.0",
+    sdk = "iphonesimulator",
+)
+
+generate_import_framework_dsym(
+    name = "iOSDynamicFrameworkDsym",
+    framework_imports = [":iOSDynamicFramework"],
+)
+
+generate_import_framework(
+    name = "iOSDynamicFrameworkWithBitcode",
+    archs = ["x86_64"],
+    embed_bitcode = True,
     libtype = "dynamic",
     minimum_os_version = "11.0",
     sdk = "iphonesimulator",

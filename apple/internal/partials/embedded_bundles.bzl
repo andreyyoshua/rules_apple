@@ -32,6 +32,9 @@ _AppleEmbeddableInfo = provider(
 Private provider used to propagate the different embeddable bundles that a
 top-level bundling rule will need to package.""",
     fields = {
+        "app_clips": """
+A depset with the zipped archives of bundles that need to be expanded into the
+AppClips section of the packaging bundle.""",
         "frameworks": """
 A depset with the zipped archives of bundles that need to be expanded into the
 Frameworks section of the packaging bundle.""",
@@ -49,14 +52,16 @@ of the packaging bundle. Only applicable for macOS applications.""",
     },
 )
 
+# TODO(b/161370390): Remove ctx from the args when ctx is removed from all partials.
 def _embedded_bundles_partial_impl(
+        *,
         ctx,
         bundle_embedded_bundles,
         embeddable_targets,
+        platform_prerequisites,
         signed_frameworks,
         **input_bundles_by_type):
     """Implementation for the embedded bundles processing partial."""
-    _ignore = [ctx]
 
     # Collect all _AppleEmbeddableInfo providers from the embeddable targets.
     embeddable_providers = [
@@ -67,12 +72,14 @@ def _embedded_bundles_partial_impl(
 
     # Map of embedded bundle type to their final location in the top-level bundle.
     bundle_type_to_location = {
+        "app_clips": processor.location.app_clip,
         "frameworks": processor.location.framework,
         "plugins": processor.location.plugin,
         "watch_bundles": processor.location.watch,
         "xpc_services": processor.location.xpc_service,
     }
 
+    config_vars = platform_prerequisites.config_vars
     transitive_bundles = dict()
     bundles_to_embed = []
     embeddedable_info_fields = {}
@@ -94,7 +101,7 @@ def _embedded_bundles_partial_impl(
                 # With tree artifacts, we need to set the parent_dir of the file to be the basename
                 # of the file. Expanding these depsets shouldn't be too much work as there shouldn't
                 # be too many embedded targets per top-level bundle.
-                if is_experimental_tree_artifact_enabled(ctx):
+                if is_experimental_tree_artifact_enabled(config_vars = config_vars):
                     for bundle in transitive_depset.to_list():
                         bundles_to_embed.append(
                             (bundle_location, bundle.basename, depset([bundle])),
@@ -119,7 +126,7 @@ def _embedded_bundles_partial_impl(
     # package into bundle_files. Otherwise, propagate through bundle_zips so that they can be
     # extracted.
     partial_output_fields = {}
-    if is_experimental_tree_artifact_enabled(ctx):
+    if is_experimental_tree_artifact_enabled(config_vars = config_vars):
         partial_output_fields["bundle_files"] = bundles_to_embed
     else:
         partial_output_fields["bundle_zips"] = bundles_to_embed
@@ -157,9 +164,12 @@ def _embedded_bundles_partial_impl(
     )
 
 def embedded_bundles_partial(
+        *,
+        app_clips = [],
         bundle_embedded_bundles = False,
         embeddable_targets = [],
         frameworks = [],
+        platform_prerequisites,
         plugins = [],
         signed_frameworks = depset(),
         watch_bundles = [],
@@ -172,6 +182,8 @@ def embedded_bundles_partial(
     ios_application.
 
     Args:
+        app_clips: List of plugin bundles that should be propagated downstream for a top level
+            target to bundle inside `AppClips`.
         bundle_embedded_bundles: If True, this target will embed all transitive embeddable_bundles
             _only_ propagated through the targets given in embeddable_targets. If False, the
             embeddable bundles will be propagated downstream for a top level target to bundle them.
@@ -179,6 +191,7 @@ def embedded_bundles_partial(
             propagate.
         frameworks: List of framework bundles that should be propagated downstream for a top level
             target to bundle inside `Frameworks`.
+        platform_prerequisites: Struct containing information on the platform being targeted.
         plugins: List of plugin bundles that should be propagated downstream for a top level
             target to bundle inside `PlugIns`.
         signed_frameworks: A depset of strings referencing frameworks that have already been
@@ -193,9 +206,11 @@ def embedded_bundles_partial(
     """
     return partial.make(
         _embedded_bundles_partial_impl,
+        app_clips = app_clips,
         bundle_embedded_bundles = bundle_embedded_bundles,
         embeddable_targets = embeddable_targets,
         frameworks = frameworks,
+        platform_prerequisites = platform_prerequisites,
         plugins = plugins,
         signed_frameworks = signed_frameworks,
         watch_bundles = watch_bundles,

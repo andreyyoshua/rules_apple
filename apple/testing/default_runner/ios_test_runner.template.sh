@@ -23,6 +23,7 @@ basename_without_extension() {
   echo "${filename%.*}"
 }
 
+custom_xctestrunner_args=()
 simulator_id=""
 while [[ $# -gt 0 ]]; do
   arg="$1"
@@ -31,8 +32,7 @@ while [[ $# -gt 0 ]]; do
       simulator_id="${arg##*=}"
       ;;
     *)
-      echo "error: unsupported --test_arg: '$1'"
-      exit 1
+      custom_xctestrunner_args+=("$arg")
       ;;
   esac
   shift
@@ -95,8 +95,7 @@ TEST_ENV="%(test_env)s"
 if [[ -n "${TEST_ENV}" ]]; then
   # Converts the test env string to json format and addes it into launch
   # options string.
-  TEST_ENV=$(echo "$TEST_ENV" | awk -F ',' '{for (i=1; i <=NF; i++) { d = index($i, "="); print substr($i, 1, d-1) " " substr($i, d+1); }}')
-  TEST_ENV=${TEST_ENV// /\":\"}
+  TEST_ENV=$(echo "$TEST_ENV" | awk -F ',' '{for (i=1; i <=NF; i++) { d = index($i, "="); print substr($i, 1, d-1) "\":\"" substr($i, d+1); }}')
   TEST_ENV=${TEST_ENV//$'\n'/\",\"}
   TEST_ENV="{\"${TEST_ENV}\"}"
   LAUNCH_OPTIONS_JSON_STR="\"env_vars\":${TEST_ENV}"
@@ -108,7 +107,8 @@ if [[ -n "$TESTBRIDGE_TEST_ONLY" ]]; then
   if [[ -n "${LAUNCH_OPTIONS_JSON_STR}" ]]; then
     LAUNCH_OPTIONS_JSON_STR+=","
   fi
-  LAUNCH_OPTIONS_JSON_STR+="\"tests_to_run\":[\"$TESTBRIDGE_TEST_ONLY\"]"
+  TESTS="${TESTBRIDGE_TEST_ONLY//,/\",\"}"
+  LAUNCH_OPTIONS_JSON_STR+="\"tests_to_run\":[\"$TESTS\"]"
 fi
 
 if [[ -n "${LAUNCH_OPTIONS_JSON_STR}" ]]; then
@@ -135,7 +135,8 @@ fi
 
 cmd=("%(testrunner_binary)s"
   "${runner_flags[@]}"
-  "${target_flags[@]}")
+  "${target_flags[@]}"
+  "${custom_xctestrunner_args[@]}")
 "${cmd[@]}" 2>&1
 status=$?
 exit ${status}

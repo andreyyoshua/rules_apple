@@ -35,27 +35,22 @@ load(
     "resources",
 )
 load(
+    "@build_bazel_rules_apple//apple/internal/utils:defines.bzl",
+    "defines",
+)
+load(
     "@build_bazel_rules_apple//apple:utils.bzl",
     "group_files_by_directory",
+)
+load(
+    "@build_bazel_rules_apple//apple:providers.bzl",
+    "AppleFrameworkImportInfo",
 )
 load(
     "@build_bazel_rules_swift//swift:swift.bzl",
     "SwiftToolchainInfo",
     "SwiftUsageInfo",
     "swift_common",
-)
-
-AppleFrameworkImportInfo = provider(
-    doc = "Provider that propagates information about framework import targets.",
-    fields = {
-        "framework_imports": """
-Depset of Files that represent framework imports that need to be bundled in the top level
-application bundle under the Frameworks directory.
-""",
-        "build_archs": """
-Depset of strings that represent binary architectures reported from the current build.
-""",
-    },
 )
 
 def _is_swiftmodule(path):
@@ -69,17 +64,14 @@ def _swiftmodule_for_cpu(swiftmodule_files, cpu):
     #   ABC.framework/Modules/ABC.swiftmodule/<arch>.swiftmodule
     # Where <arch> will be a common arch like x86_64, arm64, etc.
     named_files = {f.basename: f for f in swiftmodule_files}
-    for extension in ("swiftinterface", "swiftmodule"):
-        module = named_files.get("{}.{}".format(cpu, extension))
-        if not module and cpu == "armv7":
-            module = named_files.get("arm.{}".format(extension))
 
-        if module:
-            return module
+    module = named_files.get("{}.swiftmodule".format(cpu))
+    if not module and cpu == "armv7":
+        module = named_files.get("arm.swiftmodule")
 
-    return None
+    return module
 
-def _classify_framework_imports(framework_imports):
+def _classify_framework_imports(ctx, framework_imports):
     """Classify a list of framework files into bundling, header, or module_map."""
 
     bundling_imports = []
@@ -91,6 +83,16 @@ def _classify_framework_imports(framework_imports):
             header_imports.append(file)
             continue
         if file_short_path.endswith(".modulemap"):
+            # With the flip of `--incompatible_objc_framework_cleanup`, the
+            # `objc_library` implementation in Bazel no longer passes module
+            # maps as inputs to the compile actions, so that `@import`
+            # statements for user-provided framework no longer work in a
+            # sandbox. This trap door allows users to continue using `@import`
+            # statements for imported framework by adding module map to
+            # header_imports so that they are included in Obj-C compilation but
+            # they aren't processed in any way.
+            if defines.bool_value(ctx, "apple.incompatible.objc_framework_propagate_modulemap", False):
+                header_imports.append(file)
             module_map_imports.append(file)
             continue
         if "Headers/" in file_short_path:
@@ -167,12 +169,13 @@ def _transitive_framework_imports(deps):
         if hasattr(dep[AppleFrameworkImportInfo], "framework_imports")
     ]
 
-def _framework_import_info(transitive_sets, arch_found):
+def _framework_import_info(transitive_sets, arch_found, dsyms = []):
     """Returns AppleFrameworkImportInfo containing transitive framework imports and build archs."""
     provider_fields = {}
     if transitive_sets:
         provider_fields["framework_imports"] = depset(transitive = transitive_sets)
     provider_fields["build_archs"] = depset([arch_found])
+    provider_fields["dsym_imports"] = depset(dsyms)
     return AppleFrameworkImportInfo(**provider_fields)
 
 def _is_debugging(ctx):
@@ -235,13 +238,19 @@ def _apple_dynamic_framework_import_impl(ctx):
 
     framework_imports = ctx.files.framework_imports
     bundling_imports, header_imports, module_map_imports = (
-        _classify_framework_imports(framework_imports)
+        _classify_framework_imports(ctx, framework_imports)
     )
 
     transitive_sets = _transitive_framework_imports(ctx.attr.deps)
     if bundling_imports:
         transitive_sets.append(depset(bundling_imports))
-    providers.append(_framework_import_info(transitive_sets, ctx.fragments.apple.single_arch_cpu))
+    providers.append(
+        _framework_import_info(
+            transitive_sets,
+            ctx.fragments.apple.single_arch_cpu,
+            ctx.files.dsym_imports,
+        ),
+    )
 
     framework_groups = _grouped_framework_files(framework_imports)
     framework_dirs_set = depset(framework_groups.keys())
@@ -269,7 +278,7 @@ def _apple_static_framework_import_impl(ctx):
     providers = []
 
     framework_imports = ctx.files.framework_imports
-    _, header_imports, module_map_imports = _classify_framework_imports(framework_imports)
+    _, header_imports, module_map_imports = _classify_framework_imports(ctx, framework_imports)
 
     transitive_sets = _transitive_framework_imports(ctx.attr.deps)
     providers.append(_framework_import_info(transitive_sets, ctx.fragments.apple.single_arch_cpu))
@@ -308,9 +317,8 @@ def _apple_static_framework_import_impl(ctx):
         if _is_debugging(ctx):
             cpu = ctx.fragments.apple.single_arch_cpu
             swiftmodule = _swiftmodule_for_cpu(swiftmodule_imports, cpu)
-            if not swiftmodule:
-                fail("ERROR: Missing imported swiftmodule for {}".format(cpu))
-            objc_provider_fields.update(_ensure_swiftmodule_is_embedded(swiftmodule))
+            if swiftmodule:
+                objc_provider_fields.update(_ensure_swiftmodule_is_embedded(swiftmodule))
 
     providers.append(_objc_provider_with_dependencies(ctx, objc_provider_fields))
     providers.append(_cc_info_with_dependencies(ctx, header_imports))
@@ -352,6 +360,12 @@ target.
             providers = [
                 [apple_common.Objc, AppleFrameworkImportInfo],
             ],
+        ),
+        "dsym_imports": attr.label_list(
+            allow_files = True,
+            doc = """
+The list of files under a .dSYM directory, that is the imported framework's dSYM bundle.
+""",
         ),
     },
     doc = """

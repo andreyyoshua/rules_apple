@@ -38,6 +38,7 @@ def tvos_framework_test_suite(name = "tvos_framework"):
             "CFBundleExecutable": "fmwk",
             "CFBundleIdentifier": "com.google.example.framework",
             "CFBundleName": "fmwk",
+            "CFBundlePackageType": "FMWK",
             "CFBundleSupportedPlatforms:0": "AppleTVSimulator*",
             "DTCompiler": "com.apple.compilers.llvm.clang.1_0",
             "DTPlatformBuild": "*",
@@ -62,6 +63,15 @@ def tvos_framework_test_suite(name = "tvos_framework"):
         binary_test_architecture = "x86_64",
         binary_contains_symbols = ["_anotherFunctionShared"],
         binary_not_contains_symbols = ["_dontCallMeShared", "_anticipatedDeadCode"],
+        tags = [name],
+    )
+
+    archive_contents_test(
+        name = "{}_angle_bracketed_import_in_umbrella_header".format(name),
+        build_type = "simulator",
+        target_under_test = "//test/starlark_tests/targets_under_test/tvos:static_fmwk",
+        text_test_file = "$BUNDLE_ROOT/Headers/static_fmwk.h",
+        text_test_values = ["#import <static_fmwk/shared.h>"],
         tags = [name],
     )
 

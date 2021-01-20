@@ -107,7 +107,6 @@ mutually exclusive, i.e. you can only specify one or the other for a particular
 build.
 
 -->
-<!-- Blocked on b/73547215
 
 ### linkmap Generation {#objc_generate_linkmap}
 
@@ -122,8 +121,6 @@ bazel build --objc_generate_linkmap //your/target
 By default, only the top level linkmap file is built when this flag is
 specified. If you require the linkmap file of the top level target dependencies,
 you'll need to specify the `--output_groups=+linkmaps` flag.
-
--->
 
 ### Debugging Entitlement Support {#apple.add_debugger_entitlement}
 
@@ -176,6 +173,14 @@ can pass `--define=apple.propagate_embedded_extra_outputs=(yes|true|1)` to
 bazel build --define=apple.propagate_embedded_extra_outputs=yes //your/target
 ```
 
+### Include symbols in ipas
+
+Including symbols in the final ipa is necessary if you want to allow Apple to
+symbolicate crash logs from App Store Connect and provide to you directly in
+the Xcode's Organizer window. If you want to include symbols in your ipa for
+App Store builds, you can pass `--apple_generate_dsym` and
+`--define=apple.package_symbols=yes` to `bazel build`.
+
 ### Disable `SwiftSupport` in ipas
 
 The SwiftSupport directory in a final ipa is only necessary if you're shipping
@@ -218,15 +223,6 @@ bazel build --define=apple.codesign_simulator_bundles=no //your/target
 One exception is XCTest bundles, those do need to be signed for the simulators
 to load them. The above `--define` does not change the behavior around signing
 of these bundles as a result.
-
-<!--
- Define not currently documented:
-
-   apple.experimental_bundling=[bundle_and_archive,bundle_only,off]
-
- Support for this option is tracked in b/35451264, but because of the tree
- artifact issues, it isn't really useful at the moment.
--->
 
 ### Localization Handling
 
@@ -316,10 +312,10 @@ replaced with the `-` character (i.e., `Foo Bar` will become `Foo-Bar`).
     <tr>
       <td><code>EXECUTABLE_NAME</code></td>
       <td>
-        <p>This is an alias for the same value as <code>PRODUCT_NAME</code>.
-        This is done to match some developer expectations from Xcode. It is
-        only available on rules that create executables, not on those that
-        create resource-only bundles.</p>
+        <p>The value of the rule's <code>executable_name</code> attribute if it
+        was given; if not, then the name of the <code>bundle_name</code>
+        attribute if it was given; if not, then the <code>name</code>of the
+        target.</p>
       </td>
     </tr>
     <tr>

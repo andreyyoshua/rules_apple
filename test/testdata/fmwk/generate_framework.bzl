@@ -24,6 +24,10 @@ def _generate_import_framework_impl(ctx):
     args.add("--sdk", ctx.attr.sdk)
     args.add("--minimum_os_version", ctx.attr.minimum_os_version)
     args.add("--libtype", ctx.attr.libtype)
+    if ctx.attr.embed_bitcode:
+        args.add("--embed_bitcode")
+    if ctx.attr.embed_debug_info:
+        args.add("--embed_debug_info")
     for arch in ctx.attr.archs:
         args.add("--arch", arch)
 
@@ -87,14 +91,14 @@ Minimum version of the OS corresponding to the SDK that this binary will support
         "src": attr.label(
             allow_single_file = True,
             default = Label(
-                "@build_bazel_rules_apple//test/testdata/frameworks:objc_source",
+                "@build_bazel_rules_apple//test/testdata/fmwk:objc_source",
             ),
             doc = "Source file for the generated framework.",
         ),
         "hdrs": attr.label(
             allow_files = True,
             default = Label(
-                "@build_bazel_rules_apple//test/testdata/frameworks:objc_headers",
+                "@build_bazel_rules_apple//test/testdata/fmwk:objc_headers",
             ),
             doc = "Header files for the generated framework.",
         ),
@@ -105,12 +109,25 @@ Possible values are `dynamic` or `static`.
 Determines if the framework will be built as a dynamic framework or a static framework.
 """,
         ),
+        "embed_bitcode": attr.bool(
+            default = False,
+            doc = """
+Set to `True` to generate and embed bitcode in the final framework binary.
+""",
+        ),
+        "embed_debug_info": attr.bool(
+            default = False,
+            doc = """
+Set to `True` to generate and embed debug information in the framework
+binary.
+""",
+        ),
         "_generate_framework": attr.label(
             executable = True,
             cfg = "exec",
             allow_files = True,
             default = Label(
-                "@build_bazel_rules_apple//test/testdata/frameworks:generate_framework",
+                "@build_bazel_rules_apple//test/testdata/fmwk:generate_framework",
             ),
         ),
     }),

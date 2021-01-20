@@ -103,6 +103,7 @@ def ios_extension_test_suite(name = "ios_extension"):
             "CFBundleExecutable": "ext",
             "CFBundleIdentifier": "com.google.example.ext",
             "CFBundleName": "ext",
+            "CFBundlePackageType": "XPC!",
             "CFBundleSupportedPlatforms:0": "iPhone*",
             "DTCompiler": "com.apple.compilers.llvm.clang.1_0",
             "DTPlatformBuild": "*",
@@ -145,11 +146,7 @@ def ios_extension_test_suite(name = "ios_extension"):
     linkmap_test(
         name = "{}_linkmap_test".format(name),
         target_under_test = "//test/starlark_tests/targets_under_test/ios:ext",
-        tags = [
-            name,
-            # OSS Blocked by b/73547215
-            "manual",  # disabled in oss
-        ],
+        tags = [name],
     )
 
     # Tests that the provisioning profile is present when built for device.

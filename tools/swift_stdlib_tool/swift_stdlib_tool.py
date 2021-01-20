@@ -20,6 +20,7 @@ import shutil
 import sys
 import tempfile
 
+from build_bazel_rules_apple.tools.bitcode_strip import bitcode_strip
 from build_bazel_rules_apple.tools.wrapper_common import execute
 from build_bazel_rules_apple.tools.wrapper_common import lipo
 
@@ -57,12 +58,17 @@ def _copy_swift_stdlibs(binaries_to_scan, swift_dylibs_path, sdk_platform,
     print(stdout)
 
 
-def _lipo_exec_files(exec_files, target_archs, source_path, destination_path):
+def _lipo_exec_files(exec_files, target_archs, strip_bitcode, source_path,
+                     destination_path):
   """Strips executable files if needed and copies them to the destination."""
   # Find all architectures from the set of files we might have to lipo.
   exec_archs = lipo.find_archs_for_binaries(
       [os.path.join(source_path, f) for f in exec_files]
   )
+
+  # Ensure directory for remote execution
+  if not os.path.exists(destination_path):
+    os.makedirs(destination_path)
 
   # Copy or lipo each file as needed, from source to destination.
   for exec_file in exec_files:
@@ -76,6 +82,8 @@ def _lipo_exec_files(exec_files, target_archs, source_path, destination_path):
       lipo.invoke_lipo(
           exec_file_source_path, target_archs, exec_file_destination_path
       )
+    if strip_bitcode:
+      bitcode_strip.invoke(exec_file_destination_path, exec_file_destination_path)
 
 
 def main():
@@ -93,6 +101,10 @@ def main():
       "--swift_dylibs_path", type=str, required=True, help="path relative from "
       "the developer directory to find the Swift standard libraries, "
       "independent of platform"
+  )
+  parser.add_argument(
+      "--strip_bitcode", action="store_true", default=False, help="strip "
+      "bitcode from the Swift support libraries"
   )
   parser.add_argument(
       "--output_path", type=str, required=True, help="path to save the Swift "
@@ -119,7 +131,8 @@ def main():
   ]
 
   # Copy or use lipo to strip the executable Swift stdlibs to their destination.
-  _lipo_exec_files(stdlib_files, target_archs, temp_path, args.output_path)
+  _lipo_exec_files(stdlib_files, target_archs, args.strip_bitcode, temp_path,
+                   args.output_path)
 
   shutil.rmtree(temp_path)
 

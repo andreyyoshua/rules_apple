@@ -179,7 +179,7 @@ EOF
     ],
     cmd =
         "INPUTS=\"\$(locations ${zip_label})\" ;" +
-        "ZIP_INPUT=\`echo \$\${INPUTS} | tr \" \" \"\\\n\" | grep \"\\(ipa\\|zip\\)\$\$\"\`;" +
+        "ZIP_INPUT=\`echo \$\${INPUTS} | tr \" \" \"\\\n\" | grep \"\\\\(ipa\\\\|zip\\\\)\$\$\"\`;" +
         "set -e && " +
         "temp=\$\$(mktemp -d \"\$\${TEST_TMPDIR:-/tmp}/dump_plist.XXXXXX\") && " +
         "/usr/bin/unzip -q \$\${ZIP_INPUT} -d \$\${temp} && " +
@@ -242,7 +242,7 @@ genrule(
     outs = ["dump_whole_plist${SUFFIX}.txt"],
     cmd =
         "INPUTS=\"\$(locations ${zip_label})\" ;" +
-        "ZIP_INPUT=\`echo \$\${INPUTS} | tr \" \" \"\\\n\" | grep \"\\(ipa\\|zip\\)\$\$\"\`;" +
+        "ZIP_INPUT=\`echo \$\${INPUTS} | tr \" \" \"\\\n\" | grep \"\\\\(ipa\\\\|zip\\\\)\$\$\"\`;" +
         "set -e && " +
         "temp=\$\$(mktemp -d \"\$\${TEST_TMPDIR:-/tmp}/dump_plist.XXXXXX\") && " +
         "/usr/bin/unzip -q \$\${ZIP_INPUT} -d \$\${temp} && " +
@@ -284,7 +284,7 @@ genrule(
     outs = ["codesign_output"],
     cmd =
         "INPUTS=\"\$(locations ${zip_label})\" ;" +
-        "ZIP_INPUT=\`echo \$\${INPUTS} | tr \" \" \"\\\n\" | grep \"\\(ipa\\|zip\\)\$\$\"\`;" +
+        "ZIP_INPUT=\`echo \$\${INPUTS} | tr \" \" \"\\\n\" | grep \"\\\\(ipa\\\\|zip\\\\)\$\$\"\`;" +
         "set -e && " +
         "temp=\$\$(mktemp -d \"\$\${TEST_TMPDIR:-/tmp}/dump_codesign.XXXXXX\") && " +
         "/usr/bin/unzip -q \$\${ZIP_INPUT} -d \$\${temp} && " +
@@ -449,8 +449,13 @@ function do_action() {
       # Explicitly pass these flags to ensure the external testing infrastructure
       # matches the internal one.
       "--incompatible_merge_genfiles_directory"
-      "--incompatible_objc_compile_info_migration"
   )
+
+  local bazel_version="$(bazel --version)"
+  local bazel_major_version="$(echo "${bazel_version#bazel }" | cut -f1 -d.)"
+  if [[ ( "${bazel_major_version}" != "no_version" ) && ( "${bazel_major_version}" -lt 4 ) ]]; then
+	bazel_options+=("--incompatible_objc_compile_info_migration")
+  fi
 
   if [[ -n "${XCODE_VERSION_FOR_TESTS-}" ]]; then
     local -a sdk_options=("--xcode_version=$XCODE_VERSION_FOR_TESTS")
@@ -660,6 +665,50 @@ function assert_ipa_contains_bitcode_maps() {
       else
         assert_zip_contains "$archive_zip_or_dir" \
           "BCSymbolMaps/${uuid}.bcsymbolmap"
+      fi
+    done
+
+    rm "$TEST_TMPDIR"/tmp_bin
+  done
+}
+
+# Usage: assert_ipa_contains_symbols <archive> <binary_path>
+#
+# Asserts that the IPA at `archive` contains symbols of the binary at `path`
+# for each architecture being built.
+#
+# To support legacy shell tests and newer Starlark tests, this function can take
+# the `archive` and `binary_path` arguments in two forms:
+#
+# - If `archive` is a directory, then `binary_path` is assumed to be the
+#   path to the binary relative to `archive`.
+# - If `archive` is a file, it is assumed to be an .ipa or .zip archive and
+#   `binary_path` is treated as the relative path to the binary inside that
+#   archive.
+function assert_ipa_contains_symbols() {
+  local archive_zip_or_dir="$1" ; shift
+
+  for binary in "$@" ; do
+    if [[ -d "$archive_zip_or_dir" ]] ; then
+      assert_exists "$archive_zip_or_dir/$binary"
+      ln -s "$archive_zip_or_dir/$binary" "$TEST_TMPDIR"/tmp_bin
+    else
+      assert_zip_contains "$archive_zip_or_dir" "$binary"
+      unzip_single_file "$archive_zip_or_dir" "$binary" > "$TEST_TMPDIR"/tmp_bin
+    fi
+
+    # Verify that there is a .symbols file for each UUID in the DWARF info.
+    dwarfdump -u "$TEST_TMPDIR"/tmp_bin | while read line ; do
+      local -a uuid_and_arch=(
+        $(echo "$line" | sed -e 's/UUID: \([^ ]*\) (\([^)]*\)).*/\1 \2/') )
+      local uuid=${uuid_and_arch[0]}
+
+      if [[ -d "$archive_zip_or_dir" ]] ; then
+        echo "$archive_zip_or_dir/Symbols/${uuid}.symbols"
+        assert_exists "$archive_zip_or_dir/Symbols/${uuid}.symbols"
+      else
+        assert_zip_contains "$archive_zip_or_dir" \
+          "Symbols/${uuid}.symbols"
       fi
     done
 

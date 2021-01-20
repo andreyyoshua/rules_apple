@@ -15,10 +15,6 @@
 """Partial implementation for bundling header and modulemaps for static frameworks."""
 
 load(
-    "@build_bazel_rules_apple//apple/internal:bundling_support.bzl",
-    "bundling_support",
-)
-load(
     "@build_bazel_rules_apple//apple/internal:intermediates.bzl",
     "intermediates",
 )
@@ -29,6 +25,10 @@ load(
 load(
     "@bazel_skylib//lib:partial.bzl",
     "partial",
+)
+load(
+    "@bazel_skylib//lib:paths.bzl",
+    "paths",
 )
 
 def _get_link_declarations(dylibs = [], frameworks = []):
@@ -103,22 +103,30 @@ def _create_modulemap(
     )
     actions.write(output = output, content = content)
 
-def _create_umbrella_header(actions, output, headers):
+def _create_umbrella_header(actions, output, bundle_name, headers):
     """Creates an umbrella header that imports a list of other headers.
 
     Args:
       actions: The `actions` module from a rule or aspect context.
       output: A declared `File` to which the umbrella header will be written.
+      bundle_name: The name of the output bundle.
       headers: A list of header files to be imported by the umbrella header.
     """
-    import_lines = ['#import "%s"' % f.basename for f in headers]
+    import_lines = ["#import <%s/%s>" % (bundle_name, f.basename) for f in headers]
     content = "\n".join(import_lines) + "\n"
     actions.write(output = output, content = content)
 
-def _static_framework_header_modulemap_partial_impl(ctx, hdrs, umbrella_header, binary_objc_provider):
+# TODO(b/161370390): Remove ctx from the args when ctx is removed from all partials.
+def _static_framework_header_modulemap_partial_impl(
+        *,
+        ctx,
+        actions,
+        binary_objc_provider,
+        bundle_name,
+        hdrs,
+        label_name,
+        umbrella_header):
     """Implementation for the static framework headers and modulemaps partial."""
-    bundle_name = bundling_support.bundle_name(ctx)
-
     bundle_files = []
 
     umbrella_header_name = None
@@ -129,10 +137,11 @@ def _static_framework_header_modulemap_partial_impl(ctx, hdrs, umbrella_header, 
         )
     elif hdrs:
         umbrella_header_name = "{}.h".format(bundle_name)
-        umbrella_header_file = intermediates.file(ctx.actions, ctx.label.name, umbrella_header_name)
+        umbrella_header_file = intermediates.file(actions, label_name, umbrella_header_name)
         _create_umbrella_header(
-            ctx.actions,
+            actions,
             umbrella_header_file,
+            bundle_name,
             sorted(hdrs),
         )
 
@@ -155,9 +164,13 @@ def _static_framework_header_modulemap_partial_impl(ctx, hdrs, umbrella_header, 
     # Create a module map if there is a need for one (that is, if there are
     # headers or if there are dylibs/frameworks that the target depends on).
     if any([sdk_dylibs, sdk_dylibs, umbrella_header_name]):
-        modulemap_file = intermediates.file(ctx.actions, ctx.label.name, "module.modulemap")
+        modulemap_file = intermediates.file(
+            actions,
+            paths.join(label_name, label_name + ".modulemaps"),
+            "module.modulemap",
+        )
         _create_modulemap(
-            ctx.actions,
+            actions,
             modulemap_file,
             bundle_name,
             umbrella_header_name,
@@ -170,15 +183,25 @@ def _static_framework_header_modulemap_partial_impl(ctx, hdrs, umbrella_header, 
         bundle_files = bundle_files,
     )
 
-def static_framework_header_modulemap_partial(hdrs, umbrella_header, binary_objc_provider):
+def static_framework_header_modulemap_partial(
+        *,
+        actions,
+        binary_objc_provider,
+        bundle_name,
+        hdrs,
+        label_name,
+        umbrella_header):
     """Constructor for the static framework headers and modulemaps partial.
 
     This partial bundles the headers and modulemaps for static frameworks.
 
     Args:
-      hdrs: The list of headers to bundle.
-      umbrella_header: An umbrella header to use instead of generating one
+      actions: The actions provider from `ctx.actions`.
       binary_objc_provider: The ObjC provider for the binary target.
+      bundle_name: The name of the output bundle.
+      hdrs: The list of headers to bundle.
+      label_name: Name of the target being built.
+      umbrella_header: An umbrella header to use instead of generating one
 
     Returns:
       A partial that returns the bundle location of the static framework header and modulemap
@@ -186,7 +209,10 @@ def static_framework_header_modulemap_partial(hdrs, umbrella_header, binary_objc
     """
     return partial.make(
         _static_framework_header_modulemap_partial_impl,
-        hdrs = hdrs,
-        umbrella_header = umbrella_header,
+        actions = actions,
         binary_objc_provider = binary_objc_provider,
+        bundle_name = bundle_name,
+        hdrs = hdrs,
+        label_name = label_name,
+        umbrella_header = umbrella_header,
     )

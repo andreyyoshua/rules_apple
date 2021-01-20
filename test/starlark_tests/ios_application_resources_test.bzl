@@ -87,7 +87,7 @@ def ios_application_resources_test_suite(name = "ios_application_resources"):
     analysis_failure_message_test(
         name = "{}_invalid_top_level_directory_fail_test".format(name),
         target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_structured_resources_in_resources_folder",
-        expected_error = "For ios bundles, the following top level directories are invalid: Resources",
+        expected_error = "For ios bundles, the following top level directories are invalid (case-insensitive): resources",
         tags = [name],
     )
 
@@ -201,10 +201,12 @@ def ios_application_resources_test_suite(name = "ios_application_resources"):
         plist_test_values = {
             "CFBundleIdentifier": "org.bazel.bundle-library-ios",
             "CFBundleName": "bundle_library_ios.bundle",
+            "CFBundlePackageType": "BNDL",
             "TargetName": "bundle_library_ios",
         },
         contains = [
             "$BUNDLE_ROOT/bundle_library_ios.bundle/basic.bundle/basic_bundle.txt",
+            "$BUNDLE_ROOT/bundle_library_ios.bundle/default.metallib",
             "$BUNDLE_ROOT/bundle_library_ios.bundle/it.lproj/localized.strings",
             "$BUNDLE_ROOT/bundle_library_ios.bundle/it.lproj/localized.txt",
             "$BUNDLE_ROOT/bundle_library_ios.bundle/it.lproj/storyboard_ios.storyboardc/",
@@ -506,6 +508,29 @@ def ios_application_resources_test_suite(name = "ios_application_resources"):
             "$BUNDLE_ROOT/bundle_library_apple.bundle/structured/generated.strings",
             "$BUNDLE_ROOT/bundle_library_apple.bundle/structured/should_be_binary.plist",
             "$BUNDLE_ROOT/bundle_library_apple.bundle/structured/should_be_binary.strings",
+        ],
+        tags = [name],
+    )
+
+    archive_contents_test(
+        name = "{}_with_resource_bundle_with_structured_resource_group_test".format(name),
+        build_type = "device",
+        compilation_mode = "opt",
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_resource_bundle_with_structured_resource_group",
+        contains = [
+            "$BUNDLE_ROOT/resource_bundle_with_structured_resource_group.bundle/Another.plist",
+        ],
+        tags = [name],
+    )
+
+    archive_contents_test(
+        name = "{}_with_resource_group_with_resource_bundle".format(name),
+        build_type = "device",
+        compilation_mode = "opt",
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_resource_group_with_resource_bundle",
+        contains = [
+            "$BUNDLE_ROOT/resource_bundle.bundle/custom_apple_resource_info.out",
+            "$BUNDLE_ROOT/resource_bundle.bundle/Info.plist",
         ],
         tags = [name],
     )

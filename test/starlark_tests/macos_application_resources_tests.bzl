@@ -68,7 +68,6 @@ def macos_application_resources_test_suite():
             "$RESOURCE_ROOT/it.lproj/localized.strings",
             "$RESOURCE_ROOT/it.lproj/localized.plist",
         ],
-        plist_test_file = "$CONTENT_ROOT/Info.plist",
         target_under_test = "//test/starlark_tests/targets_under_test/macos:app",
         tags = [name],
     )
@@ -125,10 +124,12 @@ def macos_application_resources_test_suite():
         plist_test_values = {
             "CFBundleIdentifier": "org.bazel.bundle-library-apple",
             "CFBundleName": "bundle_library_apple.bundle",
+            "CFBundlePackageType": "BNDL",
             "TargetName": "bundle_library_apple",
         },
         contains = [
             "$RESOURCE_ROOT/bundle_library_apple.bundle/basic.bundle/basic_bundle.txt",
+            "$RESOURCE_ROOT/bundle_library_apple.bundle/default.metallib",
             "$RESOURCE_ROOT/bundle_library_apple.bundle/it.lproj/localized.strings",
             "$RESOURCE_ROOT/bundle_library_apple.bundle/it.lproj/localized.txt",
             "$RESOURCE_ROOT/bundle_library_apple.bundle/mapping_model.cdm",

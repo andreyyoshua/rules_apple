@@ -14,7 +14,7 @@
 
 """Definitions for handling Bazel repositories used by the Apple rules."""
 
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 def _colorize(text, color):
     """Applies ANSI color codes around the given text."""
@@ -109,9 +109,9 @@ def apple_rules_dependencies(ignore_version_differences = False):
     _maybe(
         http_archive,
         name = "build_bazel_apple_support",
-        sha256 = "a5117190075ba395c7f6ee5ac42bb9f8bc44cc11f427a55b5f16ec69a01c89cb",
+        sha256 = "02ac04ff0a0de1e891a1fa8839cc6a5957e3c4a80856545aa35a786d15aad108",
         urls = [
-            "https://github.com/bazelbuild/apple_support/releases/download/0.8.0/apple_support.0.8.0.tar.gz",
+            "https://github.com/bazelbuild/apple_support/releases/download/0.9.1/apple_support.0.9.1.tar.gz",
         ],
         ignore_version_differences = ignore_version_differences,
     )
@@ -120,17 +120,30 @@ def apple_rules_dependencies(ignore_version_differences = False):
         http_archive,
         name = "build_bazel_rules_swift",
         urls = [
-            "https://github.com/bazelbuild/rules_swift/releases/download/0.14.0/rules_swift.0.14.0.tar.gz",
+            "https://github.com/bazelbuild/rules_swift/releases/download/0.18.0/rules_swift.0.18.0.tar.gz",
         ],
-        sha256 = "cea22c0616d797e494d7844a9b604520c87f53c81de49613a7e679ec5b821620",
+        sha256 = "d0e5f888b2ccce42c92e6d4686b5507b4230462627f965f9d39862e11ae9fb35",
         ignore_version_differences = ignore_version_differences,
     )
 
     _maybe(
-        http_file,
+        http_archive,
+        name = "subpar",
+        urls = [
+            "https://github.com/google/subpar/archive/2.0.0.tar.gz",
+        ],
+        strip_prefix = "subpar-2.0.0",
+        sha256 = "b80297a1b8d38027a86836dbadc22f55dc3ecad56728175381aa6330705ac10f",
+        ignore_version_differences = ignore_version_differences,
+    )
+
+    _maybe(
+        http_archive,
         name = "xctestrunner",
-        executable = 1,
-        sha256 = "298846d5ad7607eba33e786149c2b642ffe39508d4a99468a8280871d902fe5d",
-        urls = ["https://github.com/google/xctestrunner/releases/download/0.2.14/ios_test_runner.par"],
+        urls = [
+            "https://github.com/google/xctestrunner/archive/64a9be0b6fa833b4b2371729c5c8cdd2c6f7775b.tar.gz",
+        ],
+        strip_prefix = "xctestrunner-64a9be0b6fa833b4b2371729c5c8cdd2c6f7775b",
+        sha256 = "c03e91efc01a1fa2f6c7764b93f5312e20c9c4fae124de2fc398871e46d4244d",
         ignore_version_differences = ignore_version_differences,
     )

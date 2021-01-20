@@ -15,11 +15,6 @@
 """Starlark test rules for debug symbols."""
 
 load(
-    "@build_bazel_rules_apple//apple:providers.bzl",
-    "AppleBinaryInfo",
-    "AppleBundleInfo",
-)
-load(
     "@bazel_skylib//lib:paths.bzl",
     "paths",
 )
@@ -34,19 +29,6 @@ def _dsyms_test_impl(ctx):
     env = analysistest.begin(ctx)
     target_under_test = ctx.attr.target_under_test[0]
 
-    if AppleBundleInfo in target_under_test:
-        platform_type = target_under_test[AppleBundleInfo].platform_type
-        if platform_type == "watchos":
-            architecture = "i386"
-        else:
-            architecture = "x86_64"
-    elif AppleBinaryInfo in target_under_test:
-        # AppleBinaryInfo does not supply a platform_type. In this case, assume x86_64.
-        architecture = "x86_64"
-    else:
-        fail(("Target %s does not provide AppleBundleInfo or AppleBinaryInfo") %
-             target_under_test.label)
-
     outputs = {
         x.short_path: None
         for x in target_under_test[OutputGroupInfo]["dsyms"].to_list()
@@ -59,15 +41,23 @@ def _dsyms_test_impl(ctx):
         for x in ctx.attr.expected_dsyms
     ]
 
-    expected_binaries = [
-        "{0}/{1}.dSYM/Contents/Resources/DWARF/{2}_{3}".format(
-            package,
-            x,
-            paths.split_extension(x)[0],
-            architecture,
-        )
-        for x in ctx.attr.expected_dsyms
-    ]
+    if ctx.attr.expected_binaries:
+        expected_binaries = [
+            "{0}/{1}".format(
+                package,
+                x,
+            )
+            for x in ctx.attr.expected_binaries
+        ]
+    else:
+        expected_binaries = [
+            "{0}/{1}.dSYM/Contents/Resources/DWARF/{2}".format(
+                package,
+                x,
+                paths.split_extension(x)[0],
+            )
+            for x in ctx.attr.expected_dsyms
+        ]
 
     for expected in expected_infoplists + expected_binaries:
         asserts.true(
@@ -89,6 +79,14 @@ dsyms_test = analysistest.make(
             doc = """
 List of bundle names in the format <bundle_name>.<bundle_extension> to verify that dSYMs bundles are
 created for them.
+""",
+        ),
+        "expected_binaries": attr.string_list(
+            mandatory = False,
+            doc = """
+List of expected binaries in dSYMs bundles in the format
+<bundle_name>.<bundle_extension>/Contents/Resources/DWARF/<executable_name> to
+verify that dSYMs binaries are created with the correct names.
 """,
         ),
     },

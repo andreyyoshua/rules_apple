@@ -60,15 +60,18 @@ def _apple_verification_transition_impl(settings, attr):
             "//command_line_option:tvos_cpus": "arm64",
             "//command_line_option:watchos_cpus": "armv7k",
         })
+    existing_features = settings.get("//command_line_option:features") or []
     if attr.sanitizer != "none":
-        output_dictionary["//command_line_option:features"] = [attr.sanitizer]
+        output_dictionary["//command_line_option:features"] = existing_features + [attr.sanitizer]
     else:
-        output_dictionary["//command_line_option:features"] = []
+        output_dictionary["//command_line_option:features"] = existing_features
     return output_dictionary
 
 apple_verification_transition = transition(
     implementation = _apple_verification_transition_impl,
-    inputs = [],
+    inputs = [
+        "//command_line_option:features",
+    ],
     outputs = [
         "//command_line_option:ios_signing_cert_name",
         "//command_line_option:ios_multi_cpus",
@@ -99,6 +102,7 @@ def _apple_verification_test_impl(ctx):
             "tvos",
         ] and bundle_info.product_type in [
             apple_product_type.application,
+            apple_product_type.app_clip,
             apple_product_type.messages_application,
         ]:
             archive_relative_bundle = paths.join("Payload", bundle_with_extension)
@@ -110,12 +114,15 @@ def _apple_verification_test_impl(ctx):
             archive_relative_binary = paths.join(
                 archive_relative_contents,
                 "MacOS",
-                bundle_info.bundle_name,
+                bundle_info.executable_name,
             )
             archive_relative_resources = paths.join(archive_relative_contents, "Resources")
         else:
             archive_relative_contents = archive_relative_bundle
-            archive_relative_binary = paths.join(archive_relative_bundle, bundle_info.bundle_name)
+            archive_relative_binary = paths.join(
+                archive_relative_bundle,
+                bundle_info.executable_name,
+            )
             archive_relative_resources = archive_relative_bundle
 
         archive_short_path = archive.short_path

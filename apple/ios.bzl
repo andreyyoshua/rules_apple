@@ -39,72 +39,118 @@ load(
 )
 load(
     "@build_bazel_rules_apple//apple/internal:ios_rules.bzl",
+    _ios_app_clip = "ios_app_clip",
     _ios_application = "ios_application",
     _ios_extension = "ios_extension",
     _ios_framework = "ios_framework",
     _ios_imessage_application = "ios_imessage_application",
     _ios_imessage_extension = "ios_imessage_extension",
     _ios_static_framework = "ios_static_framework",
+    _ios_dynamic_framework = "ios_dynamic_framework",
     _ios_sticker_pack_extension = "ios_sticker_pack_extension",
 )
 
 def ios_application(name, **kwargs):
     """Builds and bundles an iOS application."""
-    bundling_args = binary_support.create_binary(
+    bundling_args = binary_support.add_entitlements_and_swift_linkopts(
         name,
-        str(apple_common.platform_type.ios),
-        apple_product_type.application,
+        platform_type = str(apple_common.platform_type.ios),
+        product_type = apple_product_type.application,
         **kwargs
     )
 
     _ios_application(
         name = name,
+        dylibs = kwargs.get("frameworks", []),
+        **bundling_args
+    )
+
+def ios_app_clip(name, **kwargs):
+    """Builds and bundles an iOS app clip."""
+    bundling_args = binary_support.add_entitlements_and_swift_linkopts(
+        name,
+        platform_type = str(apple_common.platform_type.ios),
+        product_type = apple_product_type.app_clip,
+        **kwargs
+    )
+
+    _ios_app_clip(
+        name = name,
+        dylibs = kwargs.get("frameworks", []),
         **bundling_args
     )
 
 def ios_extension(name, **kwargs):
     """Builds and bundles an iOS application extension."""
-    bundling_args = binary_support.create_binary(
+    bundling_args = binary_support.add_entitlements_and_swift_linkopts(
         name,
-        str(apple_common.platform_type.ios),
-        apple_product_type.app_extension,
-        extension_safe = True,
+        platform_type = str(apple_common.platform_type.ios),
+        product_type = apple_product_type.app_extension,
         **kwargs
     )
 
     _ios_extension(
         name = name,
+        dylibs = kwargs.get("frameworks", []),
         **bundling_args
     )
 
 def ios_framework(name, **kwargs):
     # buildifier: disable=function-docstring-args
     """Builds and bundles an iOS dynamic framework."""
-    linkopts = kwargs.get("linkopts", [])
+    binary_args = dict(kwargs)
 
-    # Can't read this from the descriptor, since it requires the bundle name as argument. Once this
-    # is migrated to be a rule, we can move this to the rule implementation.
-    bundle_name = kwargs.get("bundle_name", name)
-    linkopts += [
-        "-install_name",
-        "@rpath/%s.framework/%s" % (bundle_name, bundle_name),
-    ]
-    kwargs["linkopts"] = linkopts
+    # TODO(b/120861201): The linkopts macro additions here only exist because the Starlark linking
+    # API does not accept extra linkopts and link inputs. With those, it will be possible to merge
+    # these workarounds into the rule implementations.
+    linkopts = binary_args.pop("linkopts", [])
+    bundle_name = binary_args.get("bundle_name", name)
+    linkopts.append("-install_name,@rpath/%s.framework/%s" % (bundle_name, bundle_name))
+    binary_args["linkopts"] = linkopts
 
-    # Link the executable from any library deps and sources provided.
-    bundling_args = binary_support.create_binary(
+    bundling_args = binary_support.add_entitlements_and_swift_linkopts(
         name,
-        str(apple_common.platform_type.ios),
-        apple_product_type.framework,
-        binary_type = "dylib",
-        suppress_entitlements = True,
-        **kwargs
+        include_entitlements = False,
+        platform_type = str(apple_common.platform_type.ios),
+        product_type = apple_product_type.framework,
+        exported_symbols_lists = binary_args.pop("exported_symbols_lists", None),
+        **binary_args
     )
 
     # Remove any kwargs that shouldn't be passed to the underlying rule.
     bundling_args.pop("entitlements", None)
 
     _ios_framework(
+        name = name,
+        dylibs = binary_args.get("frameworks", []),
+        **bundling_args
+    )
+
+def ios_dynamic_framework(name, **kwargs):
+    # buildifier: disable=function-docstring-args
+    """Builds and bundles an iOS dynamic framework that is consumable by Xcode."""
+
+    binary_args = dict(kwargs)
+    # TODO(b/120861201): The linkopts macro additions here only exist because the Starlark linking
+    # API does not accept extra linkopts and link inputs. With those, it will be possible to merge
+    # these workarounds into the rule implementations.
+    linkopts = binary_args.pop("linkopts", [])
+    bundle_name = binary_args.get("bundle_name", name)
+    linkopts += ["-install_name", "@rpath/%s.framework/%s" % (bundle_name, bundle_name)]
+    binary_args["linkopts"] = linkopts
+    bundling_args = binary_support.add_entitlements_and_swift_linkopts(
+        name,
+        include_entitlements = False,
+        platform_type = str(apple_common.platform_type.ios),
+        product_type = apple_product_type.framework,
+        exported_symbols_lists = binary_args.pop("exported_symbols_lists", None),
+        **binary_args
+    )
+
+    # Remove any kwargs that shouldn't be passed to the underlying rule.
+    bundling_args.pop("entitlements", None)
+
+    _ios_dynamic_framework(
         name = name,
         extension_safe = kwargs.get("extension_safe"),
         **bundling_args
@@ -144,6 +190,7 @@ def ios_imessage_application(name, **kwargs):
     bundling_args = binary_support.add_entitlements_and_swift_linkopts(
         name,
         platform_type = str(apple_common.platform_type.ios),
+        product_type = apple_product_type.messages_application,
         is_stub = True,
         **kwargs
     )
@@ -159,6 +206,7 @@ def ios_sticker_pack_extension(name, **kwargs):
     bundling_args = binary_support.add_entitlements_and_swift_linkopts(
         name,
         platform_type = str(apple_common.platform_type.ios),
+        product_type = apple_product_type.messages_sticker_pack_extension,
         is_stub = True,
         **kwargs
     )
@@ -174,6 +222,7 @@ def ios_imessage_extension(name, **kwargs):
     bundling_args = binary_support.add_entitlements_and_swift_linkopts(
         name,
         platform_type = str(apple_common.platform_type.ios),
+        product_type = apple_product_type.messages_extension,
         **kwargs
     )
 

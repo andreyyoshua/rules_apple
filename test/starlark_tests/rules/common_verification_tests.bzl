@@ -38,6 +38,8 @@ def archive_contents_test(
         binary_test_architecture = "",
         binary_contains_symbols = [],
         binary_not_contains_symbols = [],
+        codesign_info_contains = [],
+        codesign_info_not_contains = [],
         macho_load_commands_contain = [],
         macho_load_commands_not_contain = [],
         **kwargs):
@@ -82,12 +84,60 @@ def archive_contents_test(
             specified in `binary_test_file`.
         binary_not_contains_symbols: Optional, A list of symbols that should not appear in the
             binary file specified in `binary_test_file`.
+        codesign_info_contains: Optional, A list of codesign info that should appear in the binary
+            file specified in `binary_test_file`.
+        codesign_info_not_contains: Optional, A list of codesign info that should not appear in the
+            binary file specified in `binary_test_file`.
         macho_load_commands_contain: Optional, A list of Mach-O load commands that should appear in
             the binary file specified in `binary_test_file`.
         macho_load_commands_not_contain: Optional, A list of Mach-O load commands that should not
             appear in the binary file specified in `binary_test_file`.
         **kwargs: Other arguments are passed through to the apple_verification_test rule.
     """
+    if any([plist_test_file, plist_test_values]) and not all([plist_test_file, plist_test_values]):
+        fail("Need both plist_test_file and plist_test_values")
+
+    got_asset_catalog_tests = any([asset_catalog_test_contains, asset_catalog_test_not_contains])
+    if any([asset_catalog_test_file, got_asset_catalog_tests]) and not all([
+        asset_catalog_test_file,
+        got_asset_catalog_tests,
+    ]):
+        fail("Need asset_catalog_test_file along with " +
+             "asset_catalog_test_contains and/or asset_catalog_test_not_contains")
+
+    if any([text_test_file, text_test_values]) and not all([text_test_file, text_test_values]):
+        fail("Need both text_test_file and text_test_values")
+
+    if binary_test_file:
+        if any([binary_contains_symbols, binary_not_contains_symbols]) and (
+            not binary_test_architecture
+        ):
+            fail("Need binary_test_architecture when checking symbols")
+        elif binary_test_architecture and not any([
+            binary_contains_symbols,
+            binary_not_contains_symbols,
+        ]):
+            fail("Need binary_contains_symbols and/or binary_not_contains_symbols when checking " +
+                 "for symbols")
+    else:
+        if any([binary_contains_symbols, binary_not_contains_symbols, binary_test_architecture]):
+            fail("Need binary_test_file to check the binary for symbols")
+        if any([macho_load_commands_contain, macho_load_commands_not_contain]):
+            fail("Need binary_test_file to check macho load commands")
+        if any([codesign_info_contains, codesign_info_not_contains]):
+            fail("Need binary_test_file to check codesign info")
+
+    if not any([
+        contains,
+        not_contains,
+        is_binary_plist,
+        is_not_binary_plist,
+        plist_test_file,
+        asset_catalog_test_file,
+        text_test_file,
+        binary_test_file,
+    ]):
+        fail("There are no tests for the archive")
 
     # Concatenate the keys and values of the test values so they can be passed as env vars.
     plist_test_values_list = []
@@ -115,11 +165,13 @@ def archive_contents_test(
             "BINARY_TEST_ARCHITECTURE": [binary_test_architecture],
             "BINARY_CONTAINS_SYMBOLS": binary_contains_symbols,
             "BINARY_NOT_CONTAINS_SYMBOLS": binary_not_contains_symbols,
+            "CODESIGN_INFO_CONTAINS": codesign_info_contains,
+            "CODESIGN_INFO_NOT_CONTAINS": codesign_info_not_contains,
             "MACHO_LOAD_COMMANDS_CONTAIN": macho_load_commands_contain,
             "MACHO_LOAD_COMMANDS_NOT_CONTAIN": macho_load_commands_not_contain,
         },
         target_under_test = target_under_test,
-        verifier_script = "verifier_scripts/archive_contents_test.sh",
+        verifier_script = "@build_bazel_rules_apple//test/starlark_tests:verifier_scripts/archive_contents_test.sh",
         **kwargs
     )
 
@@ -157,6 +209,14 @@ def binary_contents_test(
             Defaults to `__info_plist`.
         **kwargs: Other arguments are passed through to the apple_verification_test rule.
     """
+    if any([binary_contains_symbols, binary_not_contains_symbols]) and not binary_test_architecture:
+        fail("Need binary_test_architecture when checking symbols")
+    elif binary_test_architecture and not any([binary_contains_symbols, binary_not_contains_symbols]):
+        fail("Need binary_contains_symbols and/or binary_not_contains_symbols when checking an " +
+             "architecture")
+
+    if not any([binary_test_file, embedded_plist_test_values]):
+        fail("There are no tests for the binary")
 
     # Concatenate the keys and values of the test values so they can be passed as env vars.
     plist_test_values_list = []
@@ -177,7 +237,7 @@ def binary_contents_test(
             "PLIST_TEST_VALUES": plist_test_values_list,
         },
         target_under_test = target_under_test,
-        verifier_script = "verifier_scripts/binary_contents_test.sh",
+        verifier_script = "@build_bazel_rules_apple//test/starlark_tests:verifier_scripts/binary_contents_test.sh",
         **kwargs
     )
 
@@ -212,7 +272,7 @@ def bitcode_symbol_map_test(
             "PLATFORM": ["unused"],
         },
         target_under_test = target_under_test,
-        verifier_script = "verifier_scripts/bitcode_verifier.sh",
+        verifier_script = "@build_bazel_rules_apple//test/starlark_tests:verifier_scripts/bitcode_verifier.sh",
         tags = tags + [
             # OSS Blocked by b/73546952
             "manual",  # disabled in oss
@@ -245,6 +305,6 @@ def entry_point_test(
             "ENTRY_POINT": [entry_point],
         },
         target_under_test = target_under_test,
-        verifier_script = "verifier_scripts/entry_point_verifier.sh",
+        verifier_script = "@build_bazel_rules_apple//test/starlark_tests:verifier_scripts/entry_point_verifier.sh",
         tags = tags,
     )

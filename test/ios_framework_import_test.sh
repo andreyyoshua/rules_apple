@@ -31,13 +31,7 @@ readonly IOS_VERSION="11.0"
 # Creates common source, targets, and basic plist for iOS applications.
 function create_common_files() {
   cat > app/BUILD <<EOF
-load("@build_bazel_rules_apple//apple:ios.bzl",
-     "ios_application",
-    )
-load("@build_bazel_rules_apple//apple:apple.bzl",
-     "apple_dynamic_framework_import",
-     "apple_static_framework_import",
-    )
+load("@build_bazel_rules_apple//apple:ios.bzl", "ios_application")
 
 ios_application(
     name = "app",
@@ -48,7 +42,6 @@ ios_application(
     provisioning_profile = "@build_bazel_rules_apple//test/testdata/provisioning:integration_testing_ios.mobileprovision",
     deps = [":main"],
 )
-
 EOF
 
   cat > app/Info-App.plist <<EOF
@@ -70,7 +63,7 @@ function test_objc_library_depends_on_dynamic_import() {
 objc_library(
     name = "main",
     srcs = ["main.m"],
-    deps = ["@build_bazel_rules_apple//test/testdata/frameworks:iOSImportedDynamicFramework"],
+    deps = ["@build_bazel_rules_apple//test/testdata/fmwk:iOSImportedDynamicFramework"],
 )
 EOF
 
@@ -91,19 +84,19 @@ EOF
 }
 
 function create_swift_static_framework() {
-  if [[ -f frameworks/BUILD ]]; then
+  if [[ -f fmwk/BUILD ]]; then
     return
   fi
 
   mkdir libraries
-  mkdir frameworks
+  mkdir fmwk
 
   cat >> libraries/BUILD <<EOF
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 swift_library(
     name = "iOSSwiftStaticFrameworkLibrary",
     module_name = "iOSSwiftStaticFramework",
-    srcs = ["@build_bazel_rules_apple//test/testdata/frameworks:swift_source"],
+    srcs = ["@build_bazel_rules_apple//test/testdata/fmwk:swift_source"],
 )
 EOF
 
@@ -113,7 +106,7 @@ EOF
     --apple_platform_type=ios \
     //libraries:iOSSwiftStaticFrameworkLibrary
 
-  local framework=frameworks/iOSSwiftStaticFramework.framework
+  local framework=fmwk/iOSSwiftStaticFramework.framework
   mkdir -p "$framework"
   cp test-bin/libraries/libiOSSwiftStaticFrameworkLibrary.a \
      "$framework/iOSSwiftStaticFramework"
@@ -124,11 +117,51 @@ EOF
   cp test-bin/libraries/iOSSwiftStaticFrameworkLibrary-Swift.h \
      "$framework/Headers/iOSSwiftStaticFramework.h"
 
-  cat >> frameworks/BUILD <<EOF
+  cat >> fmwk/BUILD <<EOF
 load("@build_bazel_rules_apple//apple:apple.bzl", "apple_static_framework_import")
 apple_static_framework_import(
     name = "iOSSwiftStaticFramework",
     framework_imports = glob(["iOSSwiftStaticFramework.framework/**"]),
+    visibility = ["//visibility:public"],
+)
+EOF
+}
+
+function create_swift_static_framework_with_ios_static_framework() {
+  if [[ -f framework_setup/BUILD ]]; then
+    return
+  fi
+
+  mkdir framework_setup bazel_frameworks
+
+  cat >> framework_setup/BUILD <<EOF
+load("@build_bazel_rules_apple//apple:ios.bzl", "ios_static_framework")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+swift_library(
+    name = "framework_lib",
+    module_name = "bazel_framework",
+    srcs = ["@build_bazel_rules_apple//test/testdata/fmwk:swift_source"],
+)
+
+ios_static_framework(
+    name = "bazel_framework",
+    minimum_os_version = "$IOS_VERSION",
+    deps = [":framework_lib"],
+)
+EOF
+
+  do_build ios \
+    --ios_minimum_os="$IOS_VERSION" \
+    --apple_platform_type=ios \
+    //framework_setup:bazel_framework
+
+  unzip test-bin/framework_setup/bazel_framework.zip -d bazel_frameworks
+
+  cat >> bazel_frameworks/BUILD <<EOF
+load("@build_bazel_rules_apple//apple:apple.bzl", "apple_static_framework_import")
+apple_static_framework_import(
+    name = "bazel_framework",
+    framework_imports = glob(["bazel_framework.framework/**"]),
     visibility = ["//visibility:public"],
 )
 EOF
@@ -141,7 +174,7 @@ function test_objc_library_depends_on_static_import() {
 objc_library(
     name = "main",
     srcs = ["main.m"],
-    deps = ["@build_bazel_rules_apple//test/testdata/frameworks:iOSImportedStaticFramework"],
+    deps = ["@build_bazel_rules_apple//test/testdata/fmwk:iOSImportedStaticFramework"],
 )
 EOF
 
@@ -167,7 +200,7 @@ function test_objc_library_depends_on_swift_static_import() {
 objc_library(
     name = "main",
     srcs = ["main.m"],
-    deps = ["//frameworks:iOSSwiftStaticFramework"],
+    deps = ["//fmwk:iOSSwiftStaticFramework"],
 )
 EOF
 
@@ -192,7 +225,7 @@ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 swift_library(
     name = "main",
     srcs = ["main.swift"],
-    deps = ["@build_bazel_rules_apple//test/testdata/frameworks:iOSImportedDynamicFramework"],
+    deps = ["@build_bazel_rules_apple//test/testdata/fmwk:iOSImportedDynamicFramework"],
 )
 EOF
 
@@ -217,7 +250,7 @@ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 swift_library(
     name = "main",
     srcs = ["main.swift"],
-    deps = ["@build_bazel_rules_apple//test/testdata/frameworks:iOSImportedStaticFramework"],
+    deps = ["@build_bazel_rules_apple//test/testdata/fmwk:iOSImportedStaticFramework"],
 )
 EOF
 
@@ -241,7 +274,7 @@ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 swift_library(
     name = "main",
     srcs = ["main.swift"],
-    deps = ["//frameworks:iOSSwiftStaticFramework"],
+    deps = ["//fmwk:iOSSwiftStaticFramework"],
 )
 EOF
 
@@ -254,8 +287,9 @@ EOF
 
     do_build ios --compilation_mode=dbg //app:app || fail "Should build"
 
-    local symbols=$(
-        unzip_single_file "test-bin/app/app.ipa" "Payload/app.app/app"
+    local symbols
+    symbols=$(
+        unzip_single_file "test-bin/app/app.ipa" "Payload/app.app/app" \
             | nm -aj - | grep .swiftmodule
     )
 
@@ -270,6 +304,42 @@ EOF
             fail "Could not find $swiftmodule AST reference in binary; " \
                  "linkopts may have not propagated"
         fi
+    done
+}
+
+function test_swift_library_depends_on_swift_static_import_from_framework() {
+    create_common_files
+
+    create_swift_static_framework_with_ios_static_framework
+
+    cat >> app/BUILD <<EOF
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+swift_library(
+    name = "main",
+    srcs = ["main.swift"],
+    deps = ["//bazel_frameworks:bazel_framework"],
+)
+EOF
+
+    cat > app/main.swift <<EOF
+import bazel_framework
+
+let sharedClass = SharedClass()
+sharedClass.doSomethingShared()
+EOF
+
+    do_build ios --compilation_mode=dbg //app:app || fail "Should build"
+
+    local symbols
+    symbols=$(
+        unzip_single_file "test-bin/app/app.ipa" "Payload/app.app/app" \
+            | nm -aj - | grep .swiftmodule
+    )
+
+    for symbol in "${symbols[@]}"; do
+      if [[ "$symbol" != *app_main.swiftmodule ]]; then
+        fail "Unexpected symbol in binary: $symbol"
+      fi
     done
 }
 

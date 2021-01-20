@@ -26,6 +26,10 @@ load(
     "apple_product_type",
 )
 load(
+    "@build_bazel_rules_apple//apple/internal:bundle_package_type.bzl",
+    "bundle_package_type",
+)
+load(
     "@build_bazel_rules_apple//apple/internal:transition_support.bzl",
     "transition_support",
 )
@@ -46,6 +50,7 @@ _CODESIGNING_EXCEPTIONS = struct(
 def _describe_bundle_locations(
         archive_relative = "",
         bundle_relative_contents = "",
+        contents_relative_app_clips = "AppClips",
         contents_relative_binary = "",
         contents_relative_frameworks = "Frameworks",
         contents_relative_plugins = "PlugIns",
@@ -56,6 +61,7 @@ def _describe_bundle_locations(
     return struct(
         archive_relative = archive_relative,
         bundle_relative_contents = bundle_relative_contents,
+        contents_relative_app_clips = contents_relative_app_clips,
         contents_relative_binary = contents_relative_binary,
         contents_relative_frameworks = contents_relative_frameworks,
         contents_relative_plugins = contents_relative_plugins,
@@ -75,12 +81,13 @@ def _describe_rule_type(
         binary_type = "executable",
         bundle_extension = None,
         bundle_locations = None,
+        bundle_package_type = None,
         codesigning_exceptions = _CODESIGNING_EXCEPTIONS.none,
         default_infoplist = None,
         default_test_runner = None,
         deps_cfg = None,
         extra_linkopts = [],
-        force_transition_allowlist = False,
+        expose_non_archive_relative_output = False,
         has_infoplist = True,
         has_launch_images = False,
         has_settings_bundle = False,
@@ -94,7 +101,6 @@ def _describe_rule_type(
         requires_provisioning_profile = True,
         requires_signing_for_device = True,
         rpaths = [],
-        rule_transition = None,
         skip_simulator_signing_allowed = True,
         stub_binary_path = None):
     """Creates a rule descriptor struct containing all the platform and product specific configs.
@@ -110,6 +116,7 @@ def _describe_rule_type(
             that should hold the icon sets (e.g. .xcassets or .xcstickers).
         archive_extension: Extension for the archive output of the rule.
         binary_infoplist: Whether the Info.plist output should be in binary form.
+        bundle_package_type: Four-character code representing the bundle type.
         binary_type: Binary type to use for the binary_type attribute in the bundling rules. This
             attribute is read by apple_common.link_multi_arch_binary, so rules that use apple_binary
             underneath are not affected.
@@ -124,8 +131,10 @@ def _describe_rule_type(
         deps_cfg: The configuration for the deps attribute. This should be None for rules that use
             the apple_binary intermediate target, and apple_common.multi_arch_split for the rules
             that use the Starlark linking API.
+        expose_non_archive_relative_output: Whether or not to expose an output archive that ignores
+            the `archive_relative` bundle location, to permit embedding within another target. Has no
+            effect if `archive_relative` is empty.
         extra_linkopts: Extra options to pass to the linker.
-        force_transition_allowlist: Whether to force a dependency on the transition allowlist.
         has_infoplist: Whether the rule should place an Info.plist file at the root of the bundle.
         has_launch_images: Whether the rule supports launch images.
         has_settings_bundle: Whether the rule supports a settings bundle.
@@ -144,7 +153,6 @@ def _describe_rule_type(
         requires_signing_for_device: Whether signing is required when building for devices (as
             opposed to simulators).
         rpaths: List of rpaths to add to the linker.
-        rule_transition: Starlark transition to apply to the rule.
         skip_simulator_signing_allowed: Whether this rule is allowed to skip signing when building
             for the simulator.
         stub_binary_path: Xcode SDK root relative path to the stub binary to copy as this rule's
@@ -168,12 +176,13 @@ def _describe_rule_type(
         binary_type = binary_type,
         bundle_extension = bundle_extension,
         bundle_locations = bundle_locations,
+        bundle_package_type = bundle_package_type,
         codesigning_exceptions = codesigning_exceptions,
         default_infoplist = default_infoplist,
         default_test_runner = default_test_runner,
         deps_cfg = deps_cfg,
+        expose_non_archive_relative_output = expose_non_archive_relative_output,
         extra_linkopts = extra_linkopts,
-        force_transition_allowlist = force_transition_allowlist,
         has_infoplist = has_infoplist,
         has_launch_images = has_launch_images,
         has_settings_bundle = has_settings_bundle,
@@ -187,7 +196,6 @@ def _describe_rule_type(
         requires_provisioning_profile = requires_provisioning_profile,
         requires_signing_for_device = requires_signing_for_device,
         rpaths = rpaths,
-        rule_transition = rule_transition,
         skip_simulator_signing_allowed = skip_simulator_signing_allowed,
         stub_binary_path = stub_binary_path,
     )
@@ -211,6 +219,8 @@ _RULE_TYPE_DESCRIPTORS = {
             archive_extension = ".ipa",
             bundle_extension = ".app",
             bundle_locations = _describe_bundle_locations(archive_relative = "Payload"),
+            bundle_package_type = bundle_package_type.application,
+            deps_cfg = apple_common.multi_arch_split,
             has_launch_images = True,
             has_settings_bundle = True,
             is_executable = True,
@@ -223,6 +233,28 @@ _RULE_TYPE_DESCRIPTORS = {
                 "@executable_path/Frameworks",
             ],
         ),
+        # ios_app_clip
+        apple_product_type.app_clip: _describe_rule_type(
+            allowed_device_families = ["iphone", "ipad"],
+            allows_locale_trimming = True,
+            app_icon_parent_extension = ".xcassets",
+            app_icon_extension = ".appiconset",
+            archive_extension = ".ipa",
+            bundle_extension = ".app",
+            bundle_package_type = bundle_package_type.application,
+            bundle_locations = _describe_bundle_locations(archive_relative = "Payload"),
+            deps_cfg = apple_common.multi_arch_split,
+            expose_non_archive_relative_output = True,
+            is_executable = True,
+            mandatory_families = True,
+            product_type = apple_product_type.app_clip,
+            requires_pkginfo = True,
+            rpaths = [
+                # AppClip binary located at AppClip.app/AppClip
+                # Frameworks are packaged in AppClip.app/Frameworks
+                "@executable_path/Frameworks",
+            ],
+        ),
         # ios_extension
         apple_product_type.app_extension: _describe_rule_type(
             allowed_device_families = ["iphone", "ipad"],
@@ -230,10 +262,10 @@ _RULE_TYPE_DESCRIPTORS = {
             app_icon_parent_extension = ".xcassets",
             app_icon_extension = ".appiconset",
             bundle_extension = ".appex",
+            bundle_package_type = bundle_package_type.extension_or_xpc,
+            deps_cfg = apple_common.multi_arch_split,
             extra_linkopts = [
-                # Migrate to -fapplication-extension, like the other rules, once ios_extension is
-                # migrated to a proper rule and not a macro with an apple_binary.
-                "-application_extension",
+                "-fapplication-extension",
             ],
             mandatory_families = True,
             product_type = apple_product_type.app_extension,
@@ -246,8 +278,11 @@ _RULE_TYPE_DESCRIPTORS = {
         # ios_framework
         apple_product_type.framework: _describe_rule_type(
             allowed_device_families = ["iphone", "ipad"],
+            binary_type = "dylib",
             bundle_extension = ".framework",
+            bundle_package_type = bundle_package_type.framework,
             codesigning_exceptions = _CODESIGNING_EXCEPTIONS.sign_with_provisioning_profile,
+            deps_cfg = apple_common.multi_arch_split,
             mandatory_families = True,
             product_type = apple_product_type.framework,
             rpaths = [
@@ -266,6 +301,7 @@ _RULE_TYPE_DESCRIPTORS = {
             app_icon_extension = ".appiconset",
             archive_extension = ".ipa",
             bundle_extension = ".app",
+            bundle_package_type = bundle_package_type.application,
             bundle_locations = _describe_bundle_locations(archive_relative = "Payload"),
             mandatory_families = True,
             product_type = apple_product_type.messages_application,
@@ -280,6 +316,7 @@ _RULE_TYPE_DESCRIPTORS = {
             app_icon_parent_extension = ".xcassets",
             app_icon_extension = ".stickersiconset",
             bundle_extension = ".appex",
+            bundle_package_type = bundle_package_type.extension_or_xpc,
             deps_cfg = apple_common.multi_arch_split,
             extra_linkopts = [
                 "-fapplication-extension",
@@ -301,6 +338,7 @@ _RULE_TYPE_DESCRIPTORS = {
             app_icon_parent_extension = ".xcstickers",
             app_icon_extension = ".stickersiconset",
             bundle_extension = ".appex",
+            bundle_package_type = bundle_package_type.extension_or_xpc,
             mandatory_families = True,
             product_type = apple_product_type.messages_sticker_pack_extension,
             requires_deps = False,
@@ -313,7 +351,6 @@ _RULE_TYPE_DESCRIPTORS = {
             bundle_extension = ".framework",
             codesigning_exceptions = _CODESIGNING_EXCEPTIONS.skip_signing,
             deps_cfg = transition_support.static_framework_transition,
-            force_transition_allowlist = True,
             has_infoplist = False,
             product_type = apple_product_type.static_framework,
             requires_bundle_id = False,
@@ -324,6 +361,7 @@ _RULE_TYPE_DESCRIPTORS = {
             allowed_device_families = ["iphone", "ipad"],
             binary_type = "loadable_bundle",
             bundle_extension = ".xctest",
+            bundle_package_type = bundle_package_type.bundle,
             default_infoplist = "@build_bazel_rules_apple//apple/testing:DefaultTestBundlePlist",
             default_test_runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
             deps_cfg = apple_common.multi_arch_split,
@@ -347,6 +385,7 @@ _RULE_TYPE_DESCRIPTORS = {
             allowed_device_families = ["iphone", "ipad"],
             binary_type = "loadable_bundle",
             bundle_extension = ".xctest",
+            bundle_package_type = bundle_package_type.bundle,
             default_infoplist = "@build_bazel_rules_apple//apple/testing:DefaultTestBundlePlist",
             default_test_runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
             deps_cfg = apple_common.multi_arch_split,
@@ -375,6 +414,7 @@ _RULE_TYPE_DESCRIPTORS = {
             app_icon_extension = ".appiconset",
             bundle_extension = ".app",
             bundle_locations = _DEFAULT_MACOS_BUNDLE_LOCATIONS,
+            bundle_package_type = bundle_package_type.application,
             deps_cfg = apple_common.multi_arch_split,
             is_executable = True,
             product_type = apple_product_type.application,
@@ -386,7 +426,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 # Frameworks are packaged in Application.app/Contents/Frameworks
                 "@executable_path/../Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_command_line_application
         apple_product_type.tool: _describe_rule_type(
@@ -398,7 +437,6 @@ _RULE_TYPE_DESCRIPTORS = {
             provisioning_profile_extension = ".provisionprofile",
             requires_provisioning_profile = True,
             requires_signing_for_device = False,
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_dylib
         apple_product_type.dylib: _describe_rule_type(
@@ -408,7 +446,6 @@ _RULE_TYPE_DESCRIPTORS = {
             deps_cfg = apple_common.multi_arch_split,
             product_type = apple_product_type.dylib,
             requires_signing_for_device = False,
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_extension
         apple_product_type.app_extension: _describe_rule_type(
@@ -418,6 +455,7 @@ _RULE_TYPE_DESCRIPTORS = {
             app_icon_extension = ".appiconset",
             bundle_extension = ".appex",
             bundle_locations = _DEFAULT_MACOS_BUNDLE_LOCATIONS,
+            bundle_package_type = bundle_package_type.extension_or_xpc,
             deps_cfg = apple_common.multi_arch_split,
             product_type = apple_product_type.app_extension,
             provisioning_profile_extension = ".provisionprofile",
@@ -428,7 +466,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 # Frameworks are packaged in Application.app/Contents/Frameworks
                 "@executable_path/../../../../Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_quick_look_plugin
         apple_product_type.quicklook_plugin: _describe_rule_type(
@@ -436,12 +473,12 @@ _RULE_TYPE_DESCRIPTORS = {
             binary_type = "dylib",
             bundle_extension = ".qlgenerator",
             bundle_locations = _DEFAULT_MACOS_BUNDLE_LOCATIONS,
+            bundle_package_type = bundle_package_type.extension_or_xpc,
             deps_cfg = apple_common.multi_arch_split,
             product_type = apple_product_type.quicklook_plugin,
             provisioning_profile_extension = ".provisionprofile",
             requires_deps = True,
             requires_signing_for_device = False,
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_bundle
         apple_product_type.bundle: _describe_rule_type(
@@ -451,6 +488,7 @@ _RULE_TYPE_DESCRIPTORS = {
             binary_type = "loadable_bundle",
             bundle_extension = ".bundle",
             bundle_locations = _DEFAULT_MACOS_BUNDLE_LOCATIONS,
+            bundle_package_type = bundle_package_type.bundle,
             deps_cfg = apple_common.multi_arch_split,
             product_type = apple_product_type.bundle,
             provisioning_profile_extension = ".provisionprofile",
@@ -461,7 +499,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 # Frameworks are packaged in Application.app/Contents/Frameworks
                 "@executable_path/../Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_kernel_extension
         apple_product_type.kernel_extension: _describe_rule_type(
@@ -469,38 +506,38 @@ _RULE_TYPE_DESCRIPTORS = {
             binary_infoplist = False,
             bundle_extension = ".kext",
             bundle_locations = _DEFAULT_MACOS_BUNDLE_LOCATIONS,
+            bundle_package_type = bundle_package_type.kernel_extension,
             deps_cfg = apple_common.multi_arch_split,
             # This was added for b/122473338, and should be removed eventually once symbol
             # stripping is better-handled. It's redundant with an option added in the CROSSTOOL
             # for the "kernel_extension" feature, but for now it's necessary to detect kext
             # linking so CompilationSupport.java can apply the correct type of symbol stripping.
             extra_linkopts = [
-                "-Xlinker",
-                "-kext",
+                "-Wl,-kext",
             ],
             product_type = apple_product_type.kernel_extension,
             provisioning_profile_extension = ".provisionprofile",
             requires_deps = True,
             requires_signing_for_device = False,
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_spotlight_importer
         apple_product_type.spotlight_importer: _describe_rule_type(
             allowed_device_families = ["mac"],
             bundle_extension = ".mdimporter",
             bundle_locations = _DEFAULT_MACOS_BUNDLE_LOCATIONS,
+            bundle_package_type = bundle_package_type.extension_or_xpc,
             deps_cfg = apple_common.multi_arch_split,
             product_type = apple_product_type.spotlight_importer,
             provisioning_profile_extension = ".provisionprofile",
             requires_deps = True,
             requires_signing_for_device = False,
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_xpc_service
         apple_product_type.xpc_service: _describe_rule_type(
             allowed_device_families = ["mac"],
             bundle_extension = ".xpc",
             bundle_locations = _DEFAULT_MACOS_BUNDLE_LOCATIONS,
+            bundle_package_type = bundle_package_type.extension_or_xpc,
             deps_cfg = apple_common.multi_arch_split,
             product_type = apple_product_type.xpc_service,
             provisioning_profile_extension = ".provisionprofile",
@@ -513,7 +550,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 # Frameworks are packaged in Application.app/Contents/Frameworks
                 "@executable_path/../../../../Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_ui_test
         apple_product_type.ui_test_bundle: _describe_rule_type(
@@ -521,6 +557,7 @@ _RULE_TYPE_DESCRIPTORS = {
             binary_type = "loadable_bundle",
             bundle_extension = ".xctest",
             bundle_locations = _DEFAULT_MACOS_BUNDLE_LOCATIONS,
+            bundle_package_type = bundle_package_type.bundle,
             default_infoplist = "@build_bazel_rules_apple//apple/testing:DefaultTestBundlePlist",
             default_test_runner = "@build_bazel_rules_apple//apple/testing/default_runner:macos_default_runner",
             deps_cfg = apple_common.multi_arch_split,
@@ -538,7 +575,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 "@executable_path/../Frameworks",
                 "@loader_path/../Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # macos_unit_test
         apple_product_type.unit_test_bundle: _describe_rule_type(
@@ -546,6 +582,7 @@ _RULE_TYPE_DESCRIPTORS = {
             binary_type = "loadable_bundle",
             bundle_extension = ".xctest",
             bundle_locations = _DEFAULT_MACOS_BUNDLE_LOCATIONS,
+            bundle_package_type = bundle_package_type.bundle,
             default_infoplist = "@build_bazel_rules_apple//apple/testing:DefaultTestBundlePlist",
             default_test_runner = "@build_bazel_rules_apple//apple/testing/default_runner:macos_default_runner",
             deps_cfg = apple_common.multi_arch_split,
@@ -563,7 +600,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 "@executable_path/../Frameworks",
                 "@loader_path/../Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
         ),
     },
     "tvos": {
@@ -576,6 +612,7 @@ _RULE_TYPE_DESCRIPTORS = {
             archive_extension = ".ipa",
             bundle_extension = ".app",
             bundle_locations = _describe_bundle_locations(archive_relative = "Payload"),
+            bundle_package_type = bundle_package_type.application,
             deps_cfg = apple_common.multi_arch_split,
             has_launch_images = True,
             has_settings_bundle = True,
@@ -587,13 +624,13 @@ _RULE_TYPE_DESCRIPTORS = {
                 # Frameworks are packaged in Application.app/Frameworks
                 "@executable_path/Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # tvos_extension
         apple_product_type.app_extension: _describe_rule_type(
             allowed_device_families = ["tv"],
             allows_locale_trimming = True,
             bundle_extension = ".appex",
+            bundle_package_type = bundle_package_type.extension_or_xpc,
             deps_cfg = apple_common.multi_arch_split,
             extra_linkopts = [
                 "-e",
@@ -608,13 +645,13 @@ _RULE_TYPE_DESCRIPTORS = {
                 # Frameworks are packaged in Application.app/Frameworks
                 "@executable_path/../../Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # tvos_framework
         apple_product_type.framework: _describe_rule_type(
             allowed_device_families = ["tv"],
-            bundle_extension = ".framework",
             binary_type = "dylib",
+            bundle_extension = ".framework",
+            bundle_package_type = bundle_package_type.framework,
             codesigning_exceptions = _CODESIGNING_EXCEPTIONS.sign_with_provisioning_profile,
             deps_cfg = apple_common.multi_arch_split,
             product_type = apple_product_type.framework,
@@ -624,7 +661,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 # Frameworks are packaged in Application.app/Frameworks
                 "@executable_path/Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # tvos_static_framework
         apple_product_type.static_framework: _describe_rule_type(
@@ -632,18 +668,17 @@ _RULE_TYPE_DESCRIPTORS = {
             bundle_extension = ".framework",
             codesigning_exceptions = _CODESIGNING_EXCEPTIONS.skip_signing,
             deps_cfg = transition_support.static_framework_transition,
-            force_transition_allowlist = True,
             has_infoplist = False,
             product_type = apple_product_type.static_framework,
             requires_bundle_id = False,
             requires_provisioning_profile = False,
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # tvos_ui_test
         apple_product_type.ui_test_bundle: _describe_rule_type(
             allowed_device_families = ["tv"],
             binary_type = "loadable_bundle",
             bundle_extension = ".xctest",
+            bundle_package_type = bundle_package_type.bundle,
             default_infoplist = "@build_bazel_rules_apple//apple/testing:DefaultTestBundlePlist",
             default_test_runner = "@build_bazel_rules_apple//apple/testing/default_runner:tvos_default_runner",
             deps_cfg = apple_common.multi_arch_split,
@@ -661,13 +696,13 @@ _RULE_TYPE_DESCRIPTORS = {
                 "@loader_path/Frameworks",
             ],
             skip_simulator_signing_allowed = False,
-            rule_transition = transition_support.apple_rule_transition,
         ),
         # tvos_unit_test
         apple_product_type.unit_test_bundle: _describe_rule_type(
             allowed_device_families = ["tv"],
             binary_type = "loadable_bundle",
             bundle_extension = ".xctest",
+            bundle_package_type = bundle_package_type.bundle,
             default_infoplist = "@build_bazel_rules_apple//apple/testing:DefaultTestBundlePlist",
             default_test_runner = "@build_bazel_rules_apple//apple/testing/default_runner:tvos_default_runner",
             deps_cfg = apple_common.multi_arch_split,
@@ -685,7 +720,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 "@loader_path/Frameworks",
             ],
             skip_simulator_signing_allowed = False,
-            rule_transition = transition_support.apple_rule_transition,
         ),
     },
     "watchos": {
@@ -696,10 +730,10 @@ _RULE_TYPE_DESCRIPTORS = {
             app_icon_parent_extension = ".xcassets",
             app_icon_extension = ".appiconset",
             bundle_extension = ".app",
+            bundle_package_type = bundle_package_type.application,
             product_type = apple_product_type.watch2_application,
             requires_deps = False,
             requires_pkginfo = True,
-            rule_transition = transition_support.apple_rule_transition,
             stub_binary_path = "Library/Application Support/WatchKit/WK",
         ),
         # watchos_extension
@@ -707,6 +741,7 @@ _RULE_TYPE_DESCRIPTORS = {
             allowed_device_families = ["watch"],
             allows_locale_trimming = True,
             bundle_extension = ".appex",
+            bundle_package_type = bundle_package_type.extension_or_xpc,
             deps_cfg = apple_common.multi_arch_split,
             extra_linkopts = [
                 "-fapplication-extension",
@@ -717,7 +752,33 @@ _RULE_TYPE_DESCRIPTORS = {
                 # Frameworks are packaged in Application.app/Frameworks
                 "@executable_path/../../Frameworks",
             ],
-            rule_transition = transition_support.apple_rule_transition,
+        ),
+        # watchos_framework
+        apple_product_type.framework: _describe_rule_type(
+            allowed_device_families = ["watch"],
+            binary_type = "dylib",
+            bundle_extension = ".framework",
+            bundle_package_type = bundle_package_type.framework,
+            codesigning_exceptions = _CODESIGNING_EXCEPTIONS.sign_with_provisioning_profile,
+            deps_cfg = apple_common.multi_arch_split,
+            product_type = apple_product_type.framework,
+            rpaths = [
+                # Framework binaries live in
+                # Application.app/Frameworks/Framework.framework/Framework
+                # Frameworks are packaged in Application.app/Frameworks
+                "@executable_path/Frameworks",
+            ],
+        ),
+        # watchos_static_framework
+        apple_product_type.static_framework: _describe_rule_type(
+            allowed_device_families = ["watch"],
+            bundle_extension = ".framework",
+            codesigning_exceptions = _CODESIGNING_EXCEPTIONS.skip_signing,
+            deps_cfg = transition_support.static_framework_transition,
+            has_infoplist = False,
+            product_type = apple_product_type.static_framework,
+            requires_bundle_id = False,
+            requires_provisioning_profile = False,
         ),
     },
 }

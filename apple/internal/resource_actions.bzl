@@ -30,6 +30,14 @@ load(
     _link_storyboards = "link_storyboards",
 )
 load(
+    "@build_bazel_rules_apple//apple/internal/resource_actions:intent.bzl",
+    _generate_intent_classes_sources = "generate_intent_classes_sources",
+)
+load(
+    "@build_bazel_rules_apple//apple/internal/resource_actions:metals.bzl",
+    _compile_metals = "compile_metals",
+)
+load(
     "@build_bazel_rules_apple//apple/internal/resource_actions:mlmodel.bzl",
     _compile_mlmodel = "compile_mlmodel",
     _generate_objc_mlmodel_sources = "generate_objc_mlmodel_sources",
@@ -49,25 +57,22 @@ load(
     "@build_bazel_rules_apple//apple/internal/resource_actions:texture_atlas.bzl",
     _compile_texture_atlas = "compile_texture_atlas",
 )
-load(
-    "@build_bazel_rules_apple//apple/internal/resource_actions:zip.bzl",
-    _unzip = "unzip",
-)
 
 resource_actions = struct(
     compile_asset_catalog = _compile_asset_catalog,
     compile_datamodels = _compile_datamodels,
     compile_mappingmodel = _compile_mappingmodel,
+    compile_metals = _compile_metals,
     compile_mlmodel = _compile_mlmodel,
     compile_plist = _compile_plist,
     compile_storyboard = _compile_storyboard,
     compile_texture_atlas = _compile_texture_atlas,
     compile_xib = _compile_xib,
     copy_png = _copy_png,
+    generate_intent_classes_sources = _generate_intent_classes_sources,
     generate_objc_mlmodel_sources = _generate_objc_mlmodel_sources,
     link_storyboards = _link_storyboards,
     merge_resource_infoplists = _merge_resource_infoplists,
     merge_root_infoplists = _merge_root_infoplists,
     plisttool_action = _plisttool_action,
-    unzip = _unzip,
 )

@@ -75,6 +75,14 @@ def ios_application_test_suite(name = "ios_application"):
     )
 
     apple_verification_test(
+        name = "{}_codesignopts_test".format(name),
+        build_type = "simulator",
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_codesignopts",
+        verifier_script = "verifier_scripts/codesignopts_verifier.sh",
+        tags = [name],
+    )
+
+    apple_verification_test(
         name = "{}_codesign_test".format(name),
         build_type = "simulator",
         target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_fmwk",
@@ -122,6 +130,23 @@ def ios_application_test_suite(name = "ios_application"):
         tags = [name],
     )
 
+    # Tests that Swift standard libraries bundled in SwiftSupport have the code
+    # signature from Apple.
+    archive_contents_test(
+        name = "{}_swift_support_codesign_test".format(name),
+        build_type = "device",
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_swift_dep",
+        binary_test_file = "$ARCHIVE_ROOT/SwiftSupport/iphoneos/libswiftCore.dylib",
+        codesign_info_contains = [
+            "Identifier=com.apple.dt.runtime.swiftCore",
+            "Authority=Software Signing",
+            "Authority=Apple Code Signing Certification Authority",
+            "Authority=Apple Root CA",
+            "TeamIdentifier=59GAB85EFG",
+        ],
+        tags = [name],
+    )
+
     apple_verification_test(
         name = "{}_entitlements_simulator_test".format(name),
         build_type = "simulator",
@@ -135,6 +160,33 @@ def ios_application_test_suite(name = "ios_application"):
         build_type = "device",
         target_under_test = "//test/starlark_tests/targets_under_test/ios:app",
         verifier_script = "verifier_scripts/entitlements_verifier.sh",
+        tags = [name],
+    )
+
+    apple_verification_test(
+        name = "{}_package_symbols_test".format(name),
+        build_type = "simulator",
+        env = {
+            "BINARY_PATHS": [
+                "Payload/app_with_imported_dynamic_fmwk_with_dsym.app/app_with_imported_dynamic_fmwk_with_dsym",
+                "Payload/app_with_imported_dynamic_fmwk_with_dsym.app/Frameworks/iOSDynamicFramework.framework/iOSDynamicFramework",
+                "Payload/app_with_imported_dynamic_fmwk_with_dsym.app/Frameworks/iOSDynamicFrameworkWithDebugInfo.framework/iOSDynamicFrameworkWithDebugInfo",
+            ],
+        },
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_imported_dynamic_fmwk_with_dsym",
+        verifier_script = "verifier_scripts/symbols_verifier.sh",
+        tags = [
+            name,
+            "manual",  # can't use Starlark transition on --define now
+        ],
+    )
+
+    archive_contents_test(
+        name = "{}_custom_executable_name_test".format(name),
+        build_type = "simulator",
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_custom_executable_name",
+        contains = ["$BUNDLE_ROOT/app.exe"],
+        not_contains = ["$BUNDLE_ROOT/app_with_custom_executable_name"],
         tags = [name],
     )
 
@@ -201,6 +253,16 @@ def ios_application_test_suite(name = "ios_application"):
         tags = [name],
     )
 
+    dsyms_test(
+        name = "{}_custom_executable_name_dsyms_test".format(name),
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_custom_executable_name",
+        expected_dsyms = ["custom_bundle_name.app"],
+        expected_binaries  = [
+            "custom_bundle_name.app.dSYM/Contents/Resources/DWARF/app.exe",
+        ],
+        tags = [name],
+    )
+
     infoplist_contents_test(
         name = "{}_plist_test".format(name),
         target_under_test = "//test/starlark_tests/targets_under_test/ios:app",
@@ -209,6 +271,7 @@ def ios_application_test_suite(name = "ios_application"):
             "CFBundleExecutable": "app",
             "CFBundleIdentifier": "com.google.example",
             "CFBundleName": "app",
+            "CFBundlePackageType": "APPL",
             "CFBundleSupportedPlatforms:0": "iPhone*",
             "DTCompiler": "com.apple.compilers.llvm.clang.1_0",
             "DTPlatformBuild": "*",
@@ -220,6 +283,15 @@ def ios_application_test_suite(name = "ios_application"):
             "DTXcodeBuild": "*",
             "MinimumOSVersion": "8.0",
             "UIDeviceFamily:0": "1",
+        },
+        tags = [name],
+    )
+
+    infoplist_contents_test(
+        name = "{}_custom_executable_name_plist_test".format(name),
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_custom_executable_name",
+        expected_values = {
+            "CFBundleExecutable": "app.exe",
         },
         tags = [name],
     )
@@ -248,11 +320,29 @@ def ios_application_test_suite(name = "ios_application"):
     linkmap_test(
         name = "{}_linkmap_test".format(name),
         target_under_test = "//test/starlark_tests/targets_under_test/ios:app",
-        tags = [
-            name,
-            # OSS Blocked by b/73547215
-            "manual",  # disabled in oss
-        ],
+        tags = [name],
+    )
+
+    # Test that Bitcode was removed from the imported framework when building
+    # with Bitcode disabled.
+    archive_contents_test(
+        name = "{}_imported_dynamic_framework_bitcode_strip_test".format(name),
+        build_type = "simulator",
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_imported_dynamic_fmwk_with_bitcode",
+        binary_test_file = "$BUNDLE_ROOT/Frameworks/iOSDynamicFrameworkWithBitcode.framework/iOSDynamicFrameworkWithBitcode",
+        macho_load_commands_not_contain = ["__LLVM"],
+        tags = [name],
+    )
+
+    # Test that Bitcode was removed from the Swift standard libraries when building
+    # with Bitcode disabled.
+    archive_contents_test(
+        name = "{}_swift_stdlibs_bitcode_strip_test".format(name),
+        build_type = "simulator",
+        target_under_test = "//test/starlark_tests/targets_under_test/ios:app_with_swift_dep",
+        binary_test_file = "$BUNDLE_ROOT/Frameworks/libswiftCore.dylib",
+        macho_load_commands_not_contain = ["__LLVM"],
+        tags = [name],
     )
 
     # Tests that the provisioning profile is present when built for device.

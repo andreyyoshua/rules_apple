@@ -40,17 +40,25 @@ load("@build_bazel_rules_apple//apple:apple.bzl",
 
 objc_library(
     name = "lib",
+    hdrs = ["Foo.h"],
     srcs = ["main.m"],
 )
 EOF
 
-  cat > app/main.m <<EOF
+  cat > app/Foo.h <<EOF
 #import <Foundation/Foundation.h>
 // This dummy class is needed to generate code in the extension target,
 // which does not take main() from here, rather from an SDK.
 @interface Foo: NSObject
+- (void)doSomething;
 @end
+EOF
+
+  cat > app/main.m <<EOF
+#import <Foundation/Foundation.h>
+#import "app/Foo.h"
 @implementation Foo
+- (void)doSomething { }
 @end
 
 int main(int argc, char **argv) {
@@ -72,7 +80,7 @@ EOF
 {
   CFBundleIdentifier = "\${PRODUCT_BUNDLE_IDENTIFIER}";
   CFBundleName = "\${PRODUCT_NAME}";
-  CFBundlePackageType = "APPL";
+  CFBundlePackageType = "XPC!";
   CFBundleShortVersionString = "1.0";
   CFBundleVersion = "1.0";
   NSExtension = {
@@ -83,12 +91,12 @@ EOF
 EOF
 }
 
-# Usage: create_minimal_ios_application_with_extension [product type]
+# Usage: create_minimal_ios_application_extension [product type]
 #
-# Creates a minimal iOS application target. The optional product type is
-# the Starlark constant that should be set on the extension using the
+# Creates a minimal iOS application extension target. The optional product type
+# is the Starlark constant that should be set on the extension using the
 # `product_type` attribute.
-function create_minimal_ios_application_with_extension() {
+function create_minimal_ios_application_extension() {
   if [[ ! -f app/BUILD ]]; then
     fail "create_common_files must be called first."
   fi
@@ -96,17 +104,6 @@ function create_minimal_ios_application_with_extension() {
   product_type="${1:-}"
 
   cat >> app/BUILD <<EOF
-ios_application(
-    name = "app",
-    bundle_id = "my.bundle.id",
-    extensions = [":ext"],
-    families = ["iphone"],
-    infoplists = ["Info-App.plist"],
-    minimum_os_version = "10.0",
-    provisioning_profile = "@build_bazel_rules_apple//test/testdata/provisioning:integration_testing_ios.mobileprovision",
-    deps = [":lib"],
-)
-
 ios_extension(
     name = "ext",
     bundle_id = "my.bundle.id.extension",
@@ -122,6 +119,34 @@ EOF
   fi
 
   cat >> app/BUILD <<EOF
+    provisioning_profile = "@build_bazel_rules_apple//test/testdata/provisioning:integration_testing_ios.mobileprovision",
+    deps = [":lib"],
+)
+EOF
+}
+
+# Usage: create_minimal_ios_application_with_extension [product type]
+#
+# Creates a minimal iOS application target. The optional product type is
+# the Starlark constant that should be set on the extension using the
+# `product_type` attribute.
+function create_minimal_ios_application_with_extension() {
+  if [[ ! -f app/BUILD ]]; then
+    fail "create_common_files must be called first."
+  fi
+
+  product_type="${1:-}"
+
+  create_minimal_ios_application_extension "$product_type"
+
+  cat >> app/BUILD <<EOF
+ios_application(
+    name = "app",
+    bundle_id = "my.bundle.id",
+    extensions = [":ext"],
+    families = ["iphone"],
+    infoplists = ["Info-App.plist"],
+    minimum_os_version = "10.0",
     provisioning_profile = "@build_bazel_rules_apple//test/testdata/provisioning:integration_testing_ios.mobileprovision",
     deps = [":lib"],
 )
@@ -201,6 +226,48 @@ This shouldn't get included
 EOF
 }
 
+# Test that the extension can be a bundle loader
+function test_bundle_loader() {
+  create_common_files
+  create_minimal_ios_application_extension
+
+  cat >> app/BUILD <<EOF
+load("@build_bazel_rules_apple//apple:ios.bzl",
+     "ios_unit_test",
+)
+
+objc_library(
+    name = "unit_test_lib",
+    hdrs = ["Foo.h"],
+    srcs = ["UnitTest.m"],
+)
+
+ios_unit_test(
+    name = "unit_tests",
+    deps = [":unit_test_lib"],
+    minimum_os_version = "9.0",
+    test_host = ":ext",
+)
+EOF
+
+  cat > app/UnitTest.m <<EOF
+#import <XCTest/XCTest.h>
+#import "app/Foo.h"
+@interface UnitTest: XCTestCase
+@end
+
+@implementation UnitTest
+- (void)testAssertNil {
+  // Call something in test host to ensure bundle loading works.
+  [[[Foo alloc] init] doSomething];
+  XCTAssertNil(nil);
+}
+@end
+EOF
+
+  do_build ios //app:unit_tests || fail "Should build"
+}
+
 # Test missing the CFBundleVersion fails the build.
 function test_missing_version_fails() {
   create_common_files
@@ -211,7 +278,7 @@ function test_missing_version_fails() {
 {
   CFBundleIdentifier = "\${PRODUCT_BUNDLE_IDENTIFIER}";
   CFBundleName = "\${PRODUCT_NAME}";
-  CFBundlePackageType = "APPL";
+  CFBundlePackageType = "XPC!";
   CFBundleShortVersionString = "1.0";
   NSExtension = {
     NSExtensionPrincipalClass = "DummyValue";
@@ -236,7 +303,7 @@ function test_missing_short_version_fails() {
 {
   CFBundleIdentifier = "\${PRODUCT_BUNDLE_IDENTIFIER}";
   CFBundleName = "\${PRODUCT_NAME}";
-  CFBundlePackageType = "APPL";
+  CFBundlePackageType = "XPC!";
   CFBundleVersion = "1.0";
   NSExtension = {
     NSExtensionPrincipalClass = "DummyValue";
@@ -307,7 +374,7 @@ EOF
 {
   CFBundleIdentifier = "\${PRODUCT_BUNDLE_IDENTIFIER}";
   CFBundleName = "\${PRODUCT_NAME}";
-  CFBundlePackageType = "APPL";
+  CFBundlePackageType = "XPC!";
   CFBundleShortVersionString = "1.0";
   CFBundleVersion = "1.0";
   NSExtension = {
@@ -377,7 +444,7 @@ EOF
 {
   CFBundleIdentifier = "\${PRODUCT_BUNDLE_IDENTIFIER}";
   CFBundleName = "\${PRODUCT_NAME}";
-  CFBundlePackageType = "APPL";
+  CFBundlePackageType = "XPC!";
   CFBundleShortVersionString = "1.1";
   CFBundleVersion = "1.0";
   NSExtension = {
@@ -447,7 +514,7 @@ EOF
 {
   CFBundleIdentifier = "\${PRODUCT_BUNDLE_IDENTIFIER}";
   CFBundleName = "\${PRODUCT_NAME}";
-  CFBundlePackageType = "APPL";
+  CFBundlePackageType = "XPC!";
   CFBundleShortVersionString = "1.0";
   CFBundleVersion = "1.1";
   NSExtension = {
@@ -528,6 +595,20 @@ function test_prebuilt_dynamic_apple_framework_import_dependency() {
       "Payload/app.app/Plugins/ext.appexFrameworks/fmwk.framework/Modules/module.modulemap"
 }
 
+# Tests that the linkmap outputs are produced when --objc_generate_linkmap is
+# present.
+function test_linkmaps_generated() {
+  create_common_files
+  create_minimal_ios_application_with_extension
+  do_build ios --objc_generate_linkmap \
+      //app:ext || fail "Should build"
+
+  declare -a archs=( $(current_archs ios) )
+  for arch in "${archs[@]}"; do
+    assert_exists "test-bin/app/ext_${arch}.linkmap"
+  done
+}
+
 # Tests that ios_extension cannot be a depenency of objc_library.
 function test_extension_under_library() {
 cat > app/BUILD <<EOF
@@ -569,7 +650,7 @@ EOF
 {
   CFBundleIdentifier = "\${PRODUCT_BUNDLE_IDENTIFIER}";
   CFBundleName = "\${PRODUCT_NAME}";
-  CFBundlePackageType = "APPL";
+  CFBundlePackageType = "XPC!";
   CFBundleShortVersionString = "1.0";
   CFBundleVersion = "1.0";
   NSExtension = {
@@ -626,13 +707,10 @@ function test_all_dsyms_propagated() {
   assert_exists "test-bin/app/app.app.dSYM/Contents/Info.plist"
   assert_exists "test-bin/app/ext.appex.dSYM/Contents/Info.plist"
 
-  declare -a archs=( $(current_archs ios) )
-  for arch in "${archs[@]}"; do
-    assert_exists \
-        "test-bin/app/app.app.dSYM/Contents/Resources/DWARF/app_${arch}"
-    assert_exists \
-        "test-bin/app/ext.appex.dSYM/Contents/Resources/DWARF/ext_${arch}"
-  done
+  assert_exists \
+      "test-bin/app/app.app.dSYM/Contents/Resources/DWARF/app"
+  assert_exists \
+      "test-bin/app/ext.appex.dSYM/Contents/Resources/DWARF/ext"
 }
 
 run_suite "ios_extension bundling tests"
