@@ -81,10 +81,6 @@ bundle root in the same structure passed to this argument, so ["res/foo.png"] wi
 res/foo.png inside the bundle.
 """,
         ),
-        "product_module_name": attr.string(
-            mandatory = False,
-            doc = "",
-        )
     },
     doc = """
 This rule encapsulates a target which is provided to dependers as a bundle. An
