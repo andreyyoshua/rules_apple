@@ -86,10 +86,10 @@ def _apple_resource_bundle_impl(ctx):
     if resource_files:
         providers.append(
             resources.bucketize_with_processing(
-                actions = actions,
-                bundle_id = None,
                 ctx,
                 resource_files,
+                actions = actions,
+                bundle_id = None,
                 swift_module = ctx.attr.product_module_name,
                 parent_dir_param = bundle_name,
                 platform_prerequisites = platform_prerequisites,
