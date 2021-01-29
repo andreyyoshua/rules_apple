@@ -86,8 +86,6 @@ def _apple_resource_bundle_impl(ctx):
     if resource_files:
         providers.append(
             resources.bucketize_with_processing(
-                ctx,
-                resource_files,
                 actions = actions,
                 bundle_id = None,
                 swift_module = ctx.attr.product_module_name,
